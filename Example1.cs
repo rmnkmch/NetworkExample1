@@ -1,105 +1,32 @@
 using UnityEngine;
-using System;
-using System.Net;
-using System.Net.Sockets;
-using System.Text;
-using System.Threading;
+using UnityEngine.SceneManagement;
 
-namespace MulticastApp
+namespace LTTDIT.Net
 {
     public class Example1 : MonoBehaviour
     {
-        IPAddress remoteAddress; // хост для отправки данных
-        const int remotePort = 8001; // порт для отправки данных
-        const int localPort = 8001; // локальный порт для прослушивания входящих подключений
-        string username;
-        private UdpClient sender;
-        private UdpClient receiver;
+        private const int OpeningScene = 0;
+        private const int ChatScene = 1;
+        private const int TicTacToeScene = 2;
 
-        public void CloseProcess()
+        private static void ChangeScene(int sceneId)
         {
-            sender.Close();
-            receiver.Close();
+            SceneManager.LoadScene(sceneId);
         }
-        public void StartProcess()
+
+        public static void LoadChatScene()
         {
-            try
-            {
-                username = "comp11111";
-                remoteAddress = IPAddress.Parse("235.5.5.11");
-                Thread receiveThread = new Thread(new ThreadStart(ReceiveMessage));
-                receiveThread.Start();
-                Thread sendThread = new Thread(new ThreadStart(SendMessage));
-                sendThread.Start();
-            }
-            catch (Exception ex)
-            {
-                Debug.Log(ex.Message);
-            }
+            ChangeScene(ChatScene);
         }
-        private void SendMessage()
+
+        public static void LoadTicTacToeScene()
         {
-            sender = new UdpClient(); // создаем UdpClient для отправки
-            IPEndPoint endPoint = new IPEndPoint(remoteAddress, remotePort);
-            try
-            {
-                while (true)
-                {
-                    string message = "UDP hi 1111 "; // сообщение для отправки
-                    message = String.Format("{0}: {1}", username, message);
-                    byte[] data = Encoding.Unicode.GetBytes(message);
-                    sender.Send(data, data.Length, endPoint); // отправка
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.Log(ex.Message);
-            }
-            finally
-            {
-                sender.Close();
-            }
+            ChangeScene(TicTacToeScene);
         }
-        private void ReceiveMessage()
+
+        public static void LoadOpeningScene()
         {
-            receiver = new UdpClient(localPort); // UdpClient для получения данных
-            receiver.JoinMulticastGroup(remoteAddress, 20);
-            IPEndPoint remoteIp = null;
-            string localAddress = LocalIPAddress();
-            try
-            {
-                while (true)
-                {
-                    byte[] data = receiver.Receive(ref remoteIp); // получаем данные
-                    if (remoteIp.Address.ToString().Equals(localAddress))
-                        continue;
-                    string message = Encoding.Unicode.GetString(data);
-                    Debug.Log(message);
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.Log(ex.Message);
-            }
-            finally
-            {
-                receiver.Close();
-            }
+            ChangeScene(OpeningScene);
         }
-        private string LocalIPAddress()
-        {
-            string localIP = "";
-            IPHostEntry host = Dns.GetHostEntry(Dns.GetHostName());
-            foreach (IPAddress ip in host.AddressList)
-            {
-                if (ip.AddressFamily == AddressFamily.InterNetwork)
-                {
-                    localIP = ip.ToString();
-                    break;
-                }
-            }
-            return localIP;
-        }
-    
-}
+    }
 }

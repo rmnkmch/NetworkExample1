@@ -2,12 +2,11 @@ using System;
 using System.Text;
 using System.Net.Sockets;
 using System.Net;
-using System.Net.NetworkInformation;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace Netw
+namespace LTTDIT.Net
 {
     public class NetScript1 : MonoBehaviour
     {
@@ -16,7 +15,6 @@ namespace Netw
         [SerializeField] private Button buttonSend;
         [SerializeField] private Button buttonExit;
 
-        [SerializeField] private InputField ipInput;
         [SerializeField] private InputField nicknameInput;
 
         [SerializeField] private Text textSend;
@@ -27,38 +25,27 @@ namespace Netw
         private delegate void Act();
         private Act act;
         private Act sendMessageAs;
+        private Act avalCheck;
         private string _userName;
 
         private TcpListener tcpListener;
         private List<ClientObject> clientObjects = new List<ClientObject>();
-        private Dictionary<IPAddress, IPAddress> IPsAndMasks = new Dictionary<IPAddress, IPAddress>();
+        private float availableTime = 3f;
 
         private TcpClient cl_tcpClient;
         private NetworkStream cl_networkStream;
 
         private readonly IPAddress broadcastUDP = IPAddress.Parse("255.255.255.255");
         private const int broadcastUDPport = 55555;
-
-        private enum SpecialCommands
-        {
-            BugToReceive = 1,
-            Available = 2,
-        }
-
-        private readonly Dictionary<SpecialCommands, string> CommandsString = new Dictionary<SpecialCommands, string>()
-        {
-            [SpecialCommands.BugToReceive] = "<!>ReceiveBug</!>",
-            [SpecialCommands.Available] = "<!>Available</!>",
-        };
+        private const int listenerTCPport = 55556;
 
         private string receivedUDPMessage = string.Empty;
         private float timeToUDPSend = 0f;
         private UdpClient udpClient;
-        private IPEndPoint udpEndPointClient;
         private UdpClient udpServer;
         private System.Threading.Thread udpReceiveThread;
-        private int receivedHostPort;
         private IPAddress receivedHostIP;
+        private IPAddress myIPAddress;
 
         private void AddTCPConnection(ClientObject clientObject)
         {
@@ -70,23 +57,47 @@ namespace Netw
             if ((clientObject != null) && clientObjects.Contains(clientObject)) clientObjects.Remove(clientObject);
         }
 
+        private void AvailableCheck()
+        {
+            avalCheck?.Invoke();
+        }
+
+        private void AvailableCheckServer()
+        {
+            availableTime += Time.deltaTime;
+            if (availableTime >= 3f)
+            {
+                BroadcastTCPMessage(Information.GetAvailableCommand(), string.Empty);
+            }
+        }
+
+        private void AvailableCheckClient()
+        {
+            availableTime += Time.deltaTime;
+            if (availableTime >= 3f)
+            {
+                SendMessageAsClient(Information.GetAvailableCommand());
+            }
+        }
+
         private void BroadcastTCPMessage(string message, string id)
         {
+            availableTime = 0f;
             ClientObject client = null;
             try
             {
-                byte[] data = Encoding.Unicode.GetBytes(message);
+                byte[] data = GetByteArrayFromString(message);
                 for (int i = 0; i < clientObjects.Count; i++)
                 {
                     client = clientObjects[i];
-                    if (clientObjects[i].UID != id) clientObjects[i].userStream.Write(data, 0, data.Length);
+                    if (clientObjects[i].UID != id) clientObjects[i].UserStream.Write(data, 0, data.Length);
                 }
             }
             catch (System.IO.IOException)
             {
                 RemoveTCPConnection(client);
                 client.Close();
-                string messagex = string.Format("{0}:::покинул чат", client.userName);
+                string messagex = string.Format("\"{0}\" покинул чат!", client.userName);
                 ShowInfo(messagex);
                 BroadcastTCPMessage(messagex, client.UID);
             }
@@ -105,6 +116,7 @@ namespace Netw
                     if (clientObjects[i].HasData())
                     {
                         string message = clientObjects[i].GetMessage();
+                        if (Information.IsCommand(message)) return;
                         message = string.Format("{0}: {1}", clientObjects[i].userName, message);
                         ShowInfo(message);
                         BroadcastTCPMessage(message, clientObjects[i].UID);
@@ -122,8 +134,9 @@ namespace Netw
         {
             RemAct(TCPListenA);
             RemAct(BroadcastTCPResendA);
-            IPsAndMasks.Clear();
             sendMessageAs = null;
+            RemAct(AvailableCheck);
+            avalCheck = null;
             if (tcpListener != null)
             {
                 tcpListener.Stop();
@@ -146,7 +159,7 @@ namespace Netw
                     TcpClient tcpClient1 = tcpListener.AcceptTcpClient();
                     ClientObject clientObject1 = new ClientObject(tcpClient1);
                     AddTCPConnection(clientObject1);
-                    string helloMessage = string.Format("Client \"{0}\" joined!", clientObject1.userName);
+                    string helloMessage = string.Format("\"{0}\" вошёл в чат!", clientObject1.userName);
                     ShowInfo(helloMessage);
                     BroadcastTCPMessage(helloMessage, clientObject1.UID);
                 }
@@ -162,7 +175,7 @@ namespace Netw
         {
             Debug.Log(info);
             ChatMessage chatMessage1 = Instantiate(chatMessagePrefab, chatMessageTransform);
-            chatMessage1.SetText(messageNumber.ToString() + ")  " + info);
+            chatMessage1.SetText(messageNumber.ToString() + ") " + info);
             messageNumber += 1;
         }
 
@@ -184,6 +197,18 @@ namespace Netw
             ShowHostIpMask();
         }
 
+        private void ShowHostIpMask()
+        {
+            foreach (IPAddress ipm in Dns.GetHostAddresses(Dns.GetHostName()))
+            {
+                if (ipm.AddressFamily.Equals(AddressFamily.InterNetwork))
+                {
+                    myIPAddress = ipm;
+                    ShowInfo(ipm.ToString() + " - ip");
+                }
+            }
+        }
+
         private void SetAct(Act act1)
         {
             act += act1;
@@ -197,33 +222,6 @@ namespace Netw
         private void ClearAct()
         {
             act = null;
-        }
-
-        private void GetHostIpAddresses()
-        {
-            IPAddress[] ip = Dns.GetHostAddresses(Dns.GetHostName());
-            for (int i = 0; i < ip.Length; i++)
-            {
-                if (ip[i].AddressFamily.Equals(AddressFamily.InterNetwork)) IPsAndMasks.Add(ip[i], GetSubnetMask(ip[i]));
-            }
-        }
-
-        private IPAddress GetSubnetMask(IPAddress address)
-        {
-            foreach (NetworkInterface adapter in NetworkInterface.GetAllNetworkInterfaces())
-            {
-                foreach (UnicastIPAddressInformation unicastIPAddressInformation in adapter.GetIPProperties().UnicastAddresses)
-                {
-                    if (unicastIPAddressInformation.Address.AddressFamily == AddressFamily.InterNetwork)
-                    {
-                        if (address.Equals(unicastIPAddressInformation.Address))
-                        {
-                            return unicastIPAddressInformation.IPv4Mask;
-                        }
-                    }
-                }
-            }
-            throw new ArgumentException($"Can't find subnetmask for IP address '{address}'");
         }
 
         private IPAddress GetBroadcastAddress(IPAddress address, IPAddress mask)
@@ -300,18 +298,6 @@ namespace Netw
             }
         }
 
-        private void ShowHostIpMask()
-        {
-            foreach (IPAddress ipm in Dns.GetHostAddresses(Dns.GetHostName()))
-            {
-                if (ipm.AddressFamily.Equals(AddressFamily.InterNetwork))
-                {
-                    receivedHostIP = ipm;
-                    ShowInfo(ipm.ToString() + " - ip");
-                }
-            }
-        }
-
         private void ReceiveUDPMessageA()
         {
             if (receivedUDPMessage.Length > 0)
@@ -326,22 +312,12 @@ namespace Netw
             if (!HasNickname()) return;
             try
             {
-                //GetHostIpAddresses();
-            }
-            catch (ArgumentException ae)
-            {
-                ShowInfo(ae.Message);
-            }
-            try
-            {
                 DisableButtons();
                 udpClient = new UdpClient(broadcastUDPport);
                 ReceiveBugSolve();
-                udpEndPointClient = null;
                 SetAct(ReceiveUDPMessageA);
                 udpReceiveThread = new System.Threading.Thread(new System.Threading.ThreadStart(ReceiveUDP));
                 udpReceiveThread.Start();
-                //ShowUDPClient();
             }
             catch (Exception ex)
             {
@@ -352,15 +328,14 @@ namespace Netw
 
         private void ReceiveBugSolve()
         {
-            byte[] data = Encoding.Unicode.GetBytes(CommandsString[SpecialCommands.BugToReceive]);
+            byte[] data = GetByteArrayFromString(Information.GetAvailableCommand());
             udpClient.Send(data, data.Length, new IPEndPoint(broadcastUDP, broadcastUDPport));
         }
 
-        private void StopReceiveUDP()
+        private void StopReceiveUDP(bool enableButtons = true)
         {
             RemAct(ReceiveUDPMessageA);
             ReceiveUDPMessageA();
-            IPsAndMasks.Clear();
             if (udpClient != null)
             {
                 udpClient.Close();
@@ -371,27 +346,27 @@ namespace Netw
                 udpReceiveThread.Interrupt();
                 udpReceiveThread = null;
             }
-            //EnableButtons();
+            if (enableButtons) EnableButtons();
         }
 
         private void StopReceiveUDPFromMainThread()
         {
             RemAct(StopReceiveUDPFromMainThread);
-            StopReceiveUDP();
+            StopReceiveUDP(false);
         }
 
         private void ReceiveUDP()
         {
+            IPEndPoint udpEndPointClient = null;
             while (true)
             {
                 try
                 {
                     byte[] data = udpClient.Receive(ref udpEndPointClient);
-                    string message = Encoding.Unicode.GetString(data);
-                    if (IsIpAddress(message))
+                    string message = GetStringFromByteArray(data);
+                    if (Information.IsIpAddress(message))
                     {
-                        receivedHostPort = GetPort(message);
-                        receivedHostIP = IPAddress.Parse(GetIpAddress(message));
+                        receivedHostIP = IPAddress.Parse(Information.GetIpAddress(message));
                         SetAct(ConnectTCPToHostFromMainThread);
                         break;
                     }
@@ -409,27 +384,13 @@ namespace Netw
         private void ConnectTCPToHostFromMainThread()
         {
             RemAct(ConnectTCPToHostFromMainThread);
-            StartTCPClientProcess(receivedHostIP, receivedHostPort);
+            StartTCPClientProcess(receivedHostIP, listenerTCPport);
             SetAct(StopReceiveUDPFromMainThread);
-        }
-
-        private bool IsIpAddress(string address)
-        {
-            if (address.Length < 10) return false;
-            if ((address[0] == '<') && (address[address.Length - 1] == '!'))
-            {
-                return true;
-            }
-            return false;
         }
 
         private void ProcessReceivedUDPMessage(string message)
         {
-            if (message.Equals(CommandsString[SpecialCommands.BugToReceive]))
-            {
-                return;
-            }
-            else
+            if (!Information.IsAvailableCommand(message))
             {
                 receivedUDPMessage = "UDP <- " + message;
             }
@@ -440,19 +401,9 @@ namespace Netw
             if (!HasNickname()) return;
             try
             {
-                //GetHostIpAddresses();
-            }
-            catch (ArgumentException ae)
-            {
-                ShowInfo(ae.Message);
-            }
-            try
-            {
-                DisableButtons();
                 udpServer = new UdpClient();
                 udpServer.Connect(broadcastUDP, broadcastUDPport);
                 SetAct(BroadcastUDP);
-                //ShowUDPServer();
             }
             catch (Exception ex)
             {
@@ -464,29 +415,24 @@ namespace Netw
         private void StopBroadcastUDP()
         {
             RemAct(BroadcastUDP);
-            IPsAndMasks.Clear();
             if (udpServer != null)
             {
                 udpServer.Close();
                 udpServer = null;
             }
-            EnableButtons();
         }
 
         private void BroadcastUDP()
         {
             timeToUDPSend += Time.deltaTime;
-            if (timeToUDPSend > 1f)
+            if (timeToUDPSend > 2f)
             {
                 timeToUDPSend = 0f;
                 try
                 {
-                    string message = textSend.text;
-                    if (message.Length < 2) message = "UDP hi)";
-                    //message = string.Format("{0}(host): {1}", _userName, message);
-                    byte[] data = Encoding.Unicode.GetBytes(message);
+                    string message = Information.SetIpAddressToCommand(myIPAddress.ToString());
+                    byte[] data = GetByteArrayFromString(message);
                     udpServer.Send(data, data.Length);
-                    ShowInfo("UDP -> " + message);
                 }
                 catch (Exception ex)
                 {
@@ -496,16 +442,20 @@ namespace Netw
             }
         }
 
+        private static byte[] GetByteArrayFromString(string infoToEncode)
+        {
+            return Encoding.Unicode.GetBytes(infoToEncode);
+        }
+
+        private static string GetStringFromByteArray(byte[] infoToEncode)
+        {
+            return Encoding.Unicode.GetString(infoToEncode);
+        }
+
         public void ServerChoosed()
         {
             StartTCPHostProcess();
             StartBroadcastUDP();
-        }
-
-        private void ShowTCPServer()
-        {
-            ShowInfo(tcpListener.Server.Connected.ToString() + " - Server.Connected");
-            //ShowInfo(tcpListener.Server.RemoteEndPoint.ToString() + " - Server.RemoteEndPoint");
         }
 
         private void StartTCPHostProcess()
@@ -514,15 +464,13 @@ namespace Netw
             try
             {
                 DisableButtons();
-                tcpListener = new TcpListener(IPAddress.Any, broadcastUDPport);
+                tcpListener = new TcpListener(IPAddress.Any, listenerTCPport);
                 tcpListener.Start();
-                TcpClient tcpClientExp = new TcpClient();
-                tcpClientExp.Connect(receivedHostIP, broadcastUDPport);
-                ShowInfo("Сервер запущен. Ожидание подключений...");
                 SetAct(TCPListenA);
                 SetAct(BroadcastTCPResendA);
                 sendMessageAs = SendMessageAsHost;
-                ShowTCPServer();
+                SetAct(AvailableCheck);
+                avalCheck = AvailableCheckServer;
             }
             catch (Exception ex)
             {
@@ -538,13 +486,19 @@ namespace Netw
 
         private void SendMessageAsClient()
         {
+            string message = textSend.text;
+            SendMessageAsClient(message);
+            ShowInfo("me: " + message);
+        }
+
+        private void SendMessageAsClient(string message)
+        {
             try
             {
-                string message = textSend.text;
                 if (message.Length < 1) return;
-                byte[] data = Encoding.Unicode.GetBytes(message);
+                availableTime = 0f;
+                byte[] data = GetByteArrayFromString(message);
                 cl_networkStream.Write(data, 0, data.Length);
-                ShowInfo("me: " + message);
             }
             catch (System.IO.IOException)
             {
@@ -583,7 +537,7 @@ namespace Netw
                     }
                     while (cl_networkStream.DataAvailable);
                     string message = builder.ToString();
-                    ShowInfo(message);
+                    if (!Information.IsCommand(message)) ShowInfo(message);
                 }
             }
             catch (Exception ex)
@@ -597,7 +551,8 @@ namespace Netw
         {
             RemAct(ReceiveTCPMessageA);
             sendMessageAs = null;
-            IPsAndMasks.Clear();
+            RemAct(AvailableCheck);
+            avalCheck = null;
             if (cl_networkStream != null)
             {
                 cl_networkStream.Close();
@@ -622,15 +577,16 @@ namespace Netw
             cl_tcpClient = new TcpClient();
             try
             {
-                DisableButtons();
                 cl_tcpClient.Connect(hostIP, hostPort);
                 cl_networkStream = cl_tcpClient.GetStream();
                 SetAct(ReceiveTCPMessageA);
                 sendMessageAs = SendMessageAsClient;
                 string firstMessage = _userName;
-                byte[] data = Encoding.Unicode.GetBytes(firstMessage);
+                byte[] data = GetByteArrayFromString(firstMessage);
                 cl_networkStream.Write(data, 0, data.Length);
                 ShowInfo("Добро пожаловать, " + _userName);
+                SetAct(AvailableCheck);
+                avalCheck = AvailableCheckClient;
             }
             catch (Exception ex)
             {
@@ -639,50 +595,12 @@ namespace Netw
             }
         }
 
-        private string GetIpAddress(string ip)
-        {
-            string retIP = string.Empty;
-            int ii = 1;
-            while (ii < ip.Length)
-            {
-                if (ip[ii] == ':') break;
-                retIP += ip[ii];
-                ii++;
-            }
-            return retIP;
-        }
-
-        private int GetPort(string port)
-        {
-            string retIP = string.Empty;
-            int ii = 0;
-            bool cont = true;
-            while (ii < port.Length - 1)
-            {
-                if (port[ii] == ':')
-                {
-                    ii++;
-                    cont = false;
-                    continue;
-                }
-                if (cont)
-                {
-                    ii++;
-                    continue;
-                }
-                retIP += port[ii];
-                ii++;
-            }
-            return int.Parse(retIP);
-        }
-
         private void DisableButtons()
         {
             buttonHost.interactable = false;
             buttonClient.interactable = false;
             buttonSend.interactable = true;
             buttonExit.interactable = true;
-            ipInput.interactable = false;
             nicknameInput.interactable = false;
         }
 
@@ -691,8 +609,7 @@ namespace Netw
             buttonHost.interactable = true;
             buttonClient.interactable = true;
             buttonSend.interactable = false;
-            //buttonExit.interactable = false;
-            ipInput.interactable = true;
+            buttonExit.interactable = false;
             nicknameInput.interactable = true;
         }
 
@@ -705,7 +622,7 @@ namespace Netw
         public class ClientObject
         {
             protected internal string UID { get; private set; }
-            protected internal NetworkStream userStream { get; private set; }
+            protected internal NetworkStream UserStream { get; private set; }
             protected internal readonly string userName;
             private readonly TcpClient userClient;
 
@@ -713,13 +630,13 @@ namespace Netw
             {
                 UID = Guid.NewGuid().ToString();
                 userClient = tcpClient;
-                userStream = userClient.GetStream();
+                UserStream = userClient.GetStream();
                 userName = GetMessage();
             }
 
             protected internal bool HasData()
             {
-                return userStream.DataAvailable;
+                return UserStream.DataAvailable;
             }
 
             protected internal string GetMessage()
@@ -730,7 +647,7 @@ namespace Netw
                     StringBuilder builder = new StringBuilder();
                     do
                     {
-                        int bytes = userStream.Read(data, 0, data.Length);
+                        int bytes = UserStream.Read(data, 0, data.Length);
                         builder.Append(Encoding.Unicode.GetString(data, 0, bytes));
                     }
                     while (HasData());
@@ -741,7 +658,7 @@ namespace Netw
 
             protected internal void Close()
             {
-                if (userStream != null) userStream.Close();
+                if (UserStream != null) UserStream.Close();
                 if (userClient != null) userClient.Close();
             }
         }
