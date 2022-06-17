@@ -4,33 +4,33 @@ namespace LTTDIT.TicTacToe
 {
     public class StepXO : MonoBehaviour
     {
-        [SerializeField] private Sprite sprite_x;
-        [SerializeField] private Sprite sprite_o;
+        [SerializeField] private Sprite spriteX;
+        [SerializeField] private Sprite spriteO;
         [SerializeField] private RectTransform rectTransform;
 
-        private Board.Players boardplayer;
+        private Board.Players boardPlayer;
 
         public void SetX(Board.Players player)
         {
-            boardplayer = player;
-            GetComponent<UnityEngine.UI.Image>().sprite = sprite_x;
+            boardPlayer = player;
+            GetComponent<UnityEngine.UI.Image>().sprite = spriteX;
         }
 
         public void SetO(Board.Players player)
         {
-            boardplayer = player;
-            GetComponent<UnityEngine.UI.Image>().sprite = sprite_o;
+            boardPlayer = player;
+            GetComponent<UnityEngine.UI.Image>().sprite = spriteO;
         }
 
         public Board.Players GetBoardPlayer()
         {
-            return boardplayer;
+            return boardPlayer;
         }
 
-        public void SetSize(Vector2 upperRight, Vector2 bottomLeft)
+        public void SetOffsets(Vector2 upper_right, Vector2 bottom_left)
         {
-            rectTransform.offsetMax = upperRight;
-            rectTransform.offsetMin = bottomLeft;
+            rectTransform.offsetMax = upper_right;
+            rectTransform.offsetMin = bottom_left;
         }
     }
 }

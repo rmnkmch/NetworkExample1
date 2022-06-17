@@ -6,10 +6,10 @@ namespace LTTDIT.TicTacToe
     {
         [SerializeField] private RectTransform rectTransform;
 
-        public void Set(Vector2 upperRight, Vector2 bottomLeft)
+        public void SetOffsets(Vector2 upper_right, Vector2 bottom_left)
         {
-            rectTransform.offsetMax = upperRight;
-            rectTransform.offsetMin = bottomLeft;
+            rectTransform.offsetMax = upper_right;
+            rectTransform.offsetMin = bottom_left;
         }
     }
 }

@@ -1,12 +1,15 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-public class ChatMessage : MonoBehaviour
+namespace LTTDIT.Chat
 {
-    [SerializeField] private Text chText;
-
-    public void SetText(string newtext)
+    public class ChatMessage : MonoBehaviour
     {
-        chText.text = newtext;
+        [SerializeField] private Text message;
+
+        public void SetText(string new_text)
+        {
+            message.text = new_text;
+        }
     }
 }
