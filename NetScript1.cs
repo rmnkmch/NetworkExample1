@@ -4,52 +4,41 @@ using System.Net.Sockets;
 using System.Net;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace LTTDIT.Net
 {
     public class NetScript1 : MonoBehaviour
     {
-        [SerializeField] private Chat.ChatMessage chatMessagePrefab;
-        [SerializeField] private ChooseIP joinButtonPrefab;
-        [SerializeField] private RectTransform joinButtonTransform;
-
-        [SerializeField] private InputField nicknameInput;
-        [SerializeField] private GameObject nicknamePanel;
-        [SerializeField] private GameObject chooseAppsPanel;
-        [SerializeField] private GameObject chooseToJoinPanel;
-
-        [SerializeField] private Text nickNameButton;
-
-        private Text textSend;
-        private RectTransform chatMessageTransform;
-        private int messageNumber = 0;
-
         private delegate void Act();
         private Act act;
-        private Act sendMessageAs;
         private Act availableCheck;
+        public delegate void CreateJoinButtonDelegate(string ip, string nick, Information.Applications app);
+        public delegate void SetDelegateToJoinButton(string ip, string nick, Information.Applications app,
+            CreateJoinButtonDelegate createJoinButtonDelegate);
+        private SetDelegateToJoinButton setJoinButton;
 
         private TcpListener tcpListener;
         private List<ClientObject> clientObjects = new List<ClientObject>();
         private TcpClient tcpClient;
         private NetworkStream networkStream;
-        private const float availableCooldown = 3f;
+        private const float availableCooldown = 1f;
         private float availableTime = 0f;
 
         private readonly IPAddress BroadcastIpAddress = IPAddress.Parse("255.255.255.255");
-        private const int BroadcastUDPport = 55555;
-        private const int ListenerTCPport = 55556;
+        private const int BroadcastUDPport = 55558;
+        private const int ListenerTCPport = 55559;
 
         private string receivedUDPData = string.Empty;
+        private bool isUDPReceiving = false;
         private float broadcastUDPTime = 0f;
-        private const float broadcastUDPCooldown = 2f;
+        private const float broadcastUDPCooldown = 1f;
         private UdpClient udpClient;
         private UdpClient udpServer;
         private System.Threading.Thread udpReceiveThread;
         private IPAddress myIPAddress;
         private string myNickname = string.Empty;
-        private Information.Applications application = Information.Applications.ApplicationError;
+        private Information.Applications myApplication = Information.Applications.ApplicationError;
+
         private string receivedIp = string.Empty;
         private string receivedNickname = string.Empty;
         private Information.Applications receivedApplication = Information.Applications.ApplicationError;
@@ -59,82 +48,77 @@ namespace LTTDIT.Net
         private const int OpeningSceneId = 0;
         private const int ChatSceneId = 1;
         private const int TicTacToeSceneId = 2;
+        private int currentSceneId = 0;
 
-        public void SetNickname()
+        public bool SetNickname(string nick_name)
         {
-            if (nicknameInput.textComponent.text.Length < 3) return;
-            myNickname = nicknameInput.textComponent.text;
-            nickNameButton.text = myNickname;
-            nicknamePanel.SetActive(false);
+            if (nick_name.Length < 3) return false;
+            myNickname = nick_name;
+            return true;
         }
 
-        public void ShowJoinButton(string ip, string nick, Information.Applications app)
+        public bool HasNickname()
         {
-            ChooseIP joinButton = Instantiate(joinButtonPrefab, joinButtonTransform);
-            joinButton.SetJoinButton(ip, nick, app);
+            return myNickname.Length >= 3;
         }
 
-        public void ChangeNickname()
+        public string GetNickname()
         {
-            nicknamePanel.SetActive(true);
+            return myNickname;
         }
 
-        public void Quit()
+        private void JoinButtonPressed(string ip, string nick, Information.Applications app)
         {
-            Application.Quit();
+            StopReceiveUDP();
+            StartTCPClientProcess(ip);
+            if (app == Information.Applications.Chat)
+            {
+                LoadChatScene();
+            }
+            else if (app == Information.Applications.TicTacToe)
+            {
+                LoadTicTacToeScene();
+            }
         }
 
-        public void Join()
+        public void JoinRoomPressed()
         {
-            chooseToJoinPanel.SetActive(true);
             StartReceiveUDP();
-        }
-
-        public void BackFromJoin()
-        {
-            chooseToJoinPanel.SetActive(false);
-            Exitt();
-        }
-
-        public void Create()
-        {
-            chooseAppsPanel.SetActive(true);
         }
 
         public void ChatSelected()
         {
+            myApplication = Information.Applications.Chat;
             LoadChatScene();
-            StartTCPHostProcess();
             StartBroadcastUDP();
+            StartTCPHostProcess();
         }
 
         public void TicTacToeSelected()
         {
+            myApplication = Information.Applications.TicTacToe;
             LoadTicTacToeScene();
-        }
-
-        public void BackFromCreate()
-        {
-            chooseAppsPanel.SetActive(false);
-            Exitt();
+            StartBroadcastUDP();
+            StartTCPHostProcess();
         }
 
         private void ChangeScene(int sceneId)
         {
-            UnityEngine.SceneManagement.SceneManager.LoadScene(sceneId);
+            if (currentSceneId != sceneId) UnityEngine.SceneManagement.SceneManager.LoadScene(sceneId);
+            currentSceneId = sceneId;
         }
 
-        public void LoadChatScene()
+        private void LoadChatScene()
         {
             ChangeScene(ChatSceneId);
         }
 
-        public void LoadTicTacToeScene()
+        private void LoadTicTacToeScene()
         {
             ChangeScene(TicTacToeSceneId);
         }
 
-        public void LoadOpeningScene()
+        private void LoadOpeningScene()
         {
             ChangeScene(OpeningSceneId);
         }
@@ -154,25 +138,36 @@ namespace LTTDIT.Net
             availableCheck?.Invoke();
         }
 
-        private void AvailableCheckServer()
+        private void StartAvailableCheck()
+        {
+            SetAct(AvailableCheckAuto);
+        }
+
+        private void StopAvailableCheck()
+        {
+            RemAct(AvailableCheckAuto);
+            availableCheck = null;
+        }
+
+        private void AvailableCheckAsHost()
         {
             availableTime += Time.deltaTime;
             if (availableTime >= availableCooldown)
             {
-                BroadcastTCPMessage(Information.GetAvailableCommand(), string.Empty);
+                SendBroadcastTCPMessage(Information.GetAvailableCommand(), string.Empty);
             }
         }
 
-        private void AvailableCheckClient()
+        private void AvailableCheckAsClient()
         {
             availableTime += Time.deltaTime;
             if (availableTime >= availableCooldown)
             {
-                SendMessageAsClient(Information.GetAvailableCommand());
+                SendTCPMessageAsClient(Information.GetAvailableCommand());
             }
         }
 
-        private void BroadcastTCPMessage(string message, string id)
+        private void SendBroadcastTCPMessage(string message, string id)
         {
             availableTime = 0f;
             ClientObject clientObj = null;
@@ -191,12 +186,12 @@ namespace LTTDIT.Net
                 clientObj.Close();
                 string messagex = string.Format("\"{0}\" left the room!", clientObj.userName);
                 ShowInfo(messagex);
-                BroadcastTCPMessage(messagex, clientObj.UID);
+                SendBroadcastTCPMessage(messagex, clientObj.UID);
             }
             catch (Exception ex)
             {
-                s_Disconnect();
-                ShowInfo("BroadcastTCPMessage - " + ex.Message);
+                DisconnectTCPHost();
+                ShowInfo("SendBroadcastTCPMessage - " + ex.Message);
             }
         }
 
@@ -209,27 +204,64 @@ namespace LTTDIT.Net
                     if (clientObjects[i].HasData())
                     {
                         string message = clientObjects[i].GetMessage();
-                        if (Information.IsCommand(message)) return;
+                        if (Information.IsAvailableCommand(message)) return;
                         message = string.Format("{0}: {1}", clientObjects[i].userName, message);
                         ShowInfo(message);
-                        BroadcastTCPMessage(message, clientObjects[i].UID);
+                        SendBroadcastTCPMessage(message, clientObjects[i].UID);
                     }
                 }
             }
             catch (Exception ex)
             {
-                s_Disconnect();
+                DisconnectTCPHost();
                 ShowInfo("BroadcastTCPResendAuto - " + ex.Message);
             }
         }
 
-        private void s_Disconnect()
+        private void ListenTCPAuto()
         {
-            RemAct(TCPListenAuto);
+            try
+            {
+                if (tcpListener.Pending())
+                {
+                    TcpClient tcpClientl = tcpListener.AcceptTcpClient();
+                    ClientObject clientObjectl = new ClientObject(tcpClientl);
+                    AddTCPConnection(clientObjectl);
+                    string helloMessage = string.Format("\"{0}\" joined!", clientObjectl.userName);
+                    ShowInfo(helloMessage);
+                    SendBroadcastTCPMessage(helloMessage, clientObjectl.UID);
+                }
+            }
+            catch (Exception ex)
+            {
+                DisconnectTCPHost();
+                ShowInfo("ListenTCPAuto - " + ex.Message);
+            }
+        }
+
+        private void StartTCPHostProcess()
+        {
+            try
+            {
+                tcpListener = new TcpListener(IPAddress.Any, ListenerTCPport);
+                tcpListener.Start();
+                availableCheck = AvailableCheckAsHost;
+                StartAvailableCheck();
+                SetAct(ListenTCPAuto);
+                SetAct(BroadcastTCPResendAuto);
+            }
+            catch (Exception ex)
+            {
+                DisconnectTCPHost();
+                ShowInfo("StartTCPHostProcess - " + ex.Message);
+            }
+        }
+
+        private void DisconnectTCPHost()
+        {
+            StopAvailableCheck();
+            RemAct(ListenTCPAuto);
             RemAct(BroadcastTCPResendAuto);
-            RemAct(AvailableCheckAuto);
-            sendMessageAs = null;
-            availableCheck = null;
             if (tcpListener != null)
             {
                 tcpListener.Stop();
@@ -242,71 +274,87 @@ namespace LTTDIT.Net
             clientObjects.Clear();
         }
 
-        private void TCPListenAuto()
+        private void ReceiveTCPMessageAuto()
         {
             try
             {
-                if (tcpListener.Pending())
+                if (networkStream.DataAvailable)
                 {
-                    TcpClient tcpClientl = tcpListener.AcceptTcpClient();
-                    ClientObject clientObjectl = new ClientObject(tcpClientl);
-                    AddTCPConnection(clientObjectl);
-                    string helloMessage = string.Format("\"{0}\" joined!", clientObjectl.userName);
-                    ShowInfo(helloMessage);
-                    BroadcastTCPMessage(helloMessage, clientObjectl.UID);
+                    byte[] data = new byte[256];
+                    StringBuilder builder = new StringBuilder();
+                    int bytes = 0;
+                    do
+                    {
+                        bytes = networkStream.Read(data, 0, data.Length);
+                        builder.Append(Encoding.Unicode.GetString(data, 0, bytes));
+                    }
+                    while (networkStream.DataAvailable);
+                    string message = builder.ToString();
+                    if (!Information.IsAvailableCommand(message)) ShowInfo(message);
                 }
             }
             catch (Exception ex)
             {
-                s_Disconnect();
-                ShowInfo("TCPListenAuto - " + ex.Message);
+                DisconnectTCPClient();
+                ShowInfo("ReceiveTCPMessageAuto - " + ex.Message);
             }
         }
 
-        private void ShowInfo(string info)
+        private void SendTCPMessageAsClient(string message)
         {
-            Debug.Log(info);
-            if (chatMessageTransform != null)
+            try
             {
-                Instantiate(chatMessagePrefab, chatMessageTransform).SetText(messageNumber.ToString() + ") " + info);
-                messageNumber++;
+                availableTime = 0f;
+                byte[] data = GetByteArrayFromString(message);
+                networkStream.Write(data, 0, data.Length);
+            }
+            catch (System.IO.IOException)
+            {
+                DisconnectTCPClient();
+                ShowInfo("Связь с хостом разорвана!");
+            }
+            catch (Exception ex)
+            {
+                DisconnectTCPClient();
+                ShowInfo("SendTCPMessageAsClient - " + ex.Message);
             }
         }
 
-        public void Exitt()
+        private void StartTCPClientProcess(string hostIP)
         {
-            s_Disconnect();
-            c_Disconnect();
-            StopBroadcastUDP();
-            StopReceiveUDP();
-        }
-
-        private void Update()
-        {
-            act?.Invoke();
-        }
-
-        private void Start()
-        {
-            if (instance == null)
+            tcpClient = new TcpClient();
+            try
             {
-                instance = this;
-                DontDestroyOnLoad(instance);
+                tcpClient.Connect(IPAddress.Parse(hostIP), ListenerTCPport);
+                networkStream = tcpClient.GetStream();
+                string firstMessage = myNickname;
+                byte[] data = GetByteArrayFromString(firstMessage);
+                networkStream.Write(data, 0, data.Length);
+                ShowInfo("Welcome, " + myNickname);
+                availableCheck = AvailableCheckAsClient;
+                StartAvailableCheck();
+                SetAct(ReceiveTCPMessageAuto);
             }
-            ShowMyIp();
-            if (myNickname.Length < 3) ChangeNickname();
-            else nickNameButton.text = myNickname;
+            catch (Exception ex)
+            {
+                DisconnectTCPClient();
+                ShowInfo("StartTCPClientProcess - " + ex.Message);
+            }
         }
 
-        private void ShowMyIp()
+        private void DisconnectTCPClient()
         {
-            foreach (IPAddress iPAddress in Dns.GetHostAddresses(Dns.GetHostName()))
+            StopAvailableCheck();
+            RemAct(ReceiveTCPMessageAuto);
+            if (networkStream != null)
             {
-                if (iPAddress.AddressFamily.Equals(AddressFamily.InterNetwork))
-                {
-                    myIPAddress = iPAddress;
-                    //ShowInfo(iPAddress.ToString() + " - my IP");
-                }
+                networkStream.Close();
+                networkStream = null;
+            }
+            if (tcpClient != null)
+            {
+                tcpClient.Close();
+                tcpClient = null;
             }
         }
 
@@ -320,138 +368,53 @@ namespace LTTDIT.Net
             act -= _act;
         }
 
-        private void ClearAct()
+        private void ShowInfo(string info)
         {
-            act = null;
+            Debug.Log(info);
         }
 
-        private void StartTCPHostProcess()
+        public void Exitt()
         {
-            try
-            {
-                tcpListener = new TcpListener(IPAddress.Any, ListenerTCPport);
-                tcpListener.Start();
-                sendMessageAs = SendMessageAsHost;
-                availableCheck = AvailableCheckServer;
-                SetAct(AvailableCheckAuto);
-                SetAct(TCPListenAuto);
-                SetAct(BroadcastTCPResendAuto);
-            }
-            catch (Exception ex)
-            {
-                s_Disconnect();
-                ShowInfo("StartTCPHostProcess - " + ex.Message);
-            }
+            DisconnectTCPHost();
+            DisconnectTCPClient();
+            StopBroadcastUDP();
+            StopReceiveUDP();
+            LoadOpeningScene();
         }
 
-        public void SendTCPMessage()
+        private void Update()
         {
-            sendMessageAs?.Invoke();
+            act?.Invoke();
         }
 
-        private void SendMessageAsClient()
+        private void Awake()
         {
-            string message = textSend.text;
-            SendMessageAsClient(message);
-            ShowInfo("me : " + message);
-        }
-
-        private void SendMessageAsClient(string message)
-        {
-            try
+            if (instance == null)
             {
-                availableTime = 0f;
-                byte[] data = GetByteArrayFromString(message);
-                networkStream.Write(data, 0, data.Length);
-            }
-            catch (System.IO.IOException)
-            {
-                c_Disconnect();
-                ShowInfo("Связь с хостом разорвана!");
-            }
-            catch (Exception ex)
-            {
-                c_Disconnect();
-                ShowInfo("SendMessageAsClient - " + ex.Message);
+                instance = this;
+                DontDestroyOnLoad(instance);
+                GetMyIp();
             }
         }
 
-        private void SendMessageAsHost()
+        private void Start()
         {
-            string message = textSend.text;
-            ShowInfo("me(host) : " + message);
-            message = string.Format("{0}(host): {1}", myNickname, message);
-            BroadcastTCPMessage(message, string.Empty);
+
         }
 
-        private void ReceiveTCPMessageAuto()
+        private void GetMyIp()
         {
-            try
+            foreach (IPAddress iPAddress in Dns.GetHostAddresses(Dns.GetHostName()))
             {
-                if (networkStream.DataAvailable)
+                if (iPAddress.AddressFamily.Equals(AddressFamily.InterNetwork))
                 {
-                    byte[] data = new byte[64];
-                    StringBuilder builder = new StringBuilder();
-                    int bytes = 0;
-                    do
-                    {
-                        bytes = networkStream.Read(data, 0, data.Length);
-                        builder.Append(Encoding.Unicode.GetString(data, 0, bytes));
-                    }
-                    while (networkStream.DataAvailable);
-                    string message = builder.ToString();
-                    if (!Information.IsCommand(message)) ShowInfo(message);
+                    myIPAddress = iPAddress;
+                    ShowInfo(iPAddress.ToString() + " - my IP");
                 }
             }
-            catch (Exception ex)
-            {
-                c_Disconnect();
-                ShowInfo("ReceiveTCPMessageAuto - " + ex.Message);
-            }
         }
 
-        private void c_Disconnect()
-        {
-            RemAct(ReceiveTCPMessageAuto);
-            RemAct(AvailableCheckAuto);
-            sendMessageAs = null;
-            availableCheck = null;
-            if (networkStream != null)
-            {
-                networkStream.Close();
-                networkStream = null;
-            }
-            if (tcpClient != null)
-            {
-                tcpClient.Close();
-                tcpClient = null;
-            }
-        }
-
-        public void StartTCPClientProcess(string hostIP)
-        {
-            tcpClient = new TcpClient();
-            try
-            {
-                tcpClient.Connect(IPAddress.Parse(hostIP), ListenerTCPport);
-                networkStream = tcpClient.GetStream();
-                SetAct(ReceiveTCPMessageAuto);
-                sendMessageAs = SendMessageAsClient;
-                string firstMessage = myNickname;
-                byte[] data = GetByteArrayFromString(firstMessage);
-                networkStream.Write(data, 0, data.Length);
-                ShowInfo("Welcome, " + myNickname);
-                SetAct(AvailableCheckAuto);
-                availableCheck = AvailableCheckClient;
-            }
-            catch (Exception ex)
-            {
-                c_Disconnect();
-                ShowInfo("StartTCPClientProcess - " + ex.Message);
-            }
-        }
-
-        private void ReceiveUDPMessageA()
+        private void ReceiveUDPMessageAuto()
         {
             if (receivedUDPData.Length > 0)
             {
@@ -465,8 +428,9 @@ namespace LTTDIT.Net
             try
             {
                 udpClient = new UdpClient(BroadcastUDPport);
-                ReceiveBugSolve();
-                SetAct(ReceiveUDPMessageA);
+                SendToSolveReceiveBug();
+                SetAct(ReceiveUDPMessageAuto);
+                isUDPReceiving = true;
                 udpReceiveThread = new System.Threading.Thread(new System.Threading.ThreadStart(ReceiveUDP));
                 udpReceiveThread.Start();
             }
@@ -477,7 +441,7 @@ namespace LTTDIT.Net
             }
         }
 
-        private void ReceiveBugSolve()
+        private void SendToSolveReceiveBug()
         {
             byte[] data = GetByteArrayFromString(Information.GetAvailableCommand());
             udpClient.Send(data, data.Length, new IPEndPoint(BroadcastIpAddress, BroadcastUDPport));
@@ -485,8 +449,9 @@ namespace LTTDIT.Net
 
         private void StopReceiveUDP()
         {
-            RemAct(ReceiveUDPMessageA);
-            ReceiveUDPMessageA();
+            isUDPReceiving = false;
+            RemAct(ReceiveUDPMessageAuto);
+            ReceiveUDPMessageAuto();
             if (udpClient != null)
             {
                 udpClient.Close();
@@ -499,36 +464,30 @@ namespace LTTDIT.Net
             }
         }
 
-        private void StopReceiveUDPFromMainThread()
-        {
-            RemAct(StopReceiveUDPFromMainThread);
-            StopReceiveUDP();
-        }
-
         private void ReceiveUDP()
         {
             IPEndPoint udpEndPointClient = null;
-            while (true)
+            while (isUDPReceiving)
             {
                 try
                 {
                     byte[] data = udpClient.Receive(ref udpEndPointClient);
                     string message = GetStringFromByteArray(data);
                     List<string> divided = Information.GetDividedCommands(message);
-                    receivedNickname = string.Empty;
                     receivedIp = string.Empty;
-                    receivedApplication = Information.Applications.TicTacToe;
+                    receivedNickname = string.Empty;
+                    receivedApplication = Information.Applications.ApplicationError;
                     foreach (string command in divided)
                     {
                         if (Information.IsIpAddress(command)) receivedIp = Information.GetIpAddress(command);
                         else if (Information.IsNickname(command)) receivedNickname = Information.GetNickname(command);
                         else if (Information.IsApplication(command)) receivedApplication = Information.GetApplication(command);
                     }
-                    if ((receivedNickname != string.Empty) && (receivedIp != string.Empty) && (receivedApplication != Information.Applications.TicTacToe))
+                    if ((receivedIp != string.Empty) && (receivedNickname != string.Empty) &&
+                        (receivedApplication != Information.Applications.ApplicationError))
                     {
-                        SetAct(ConnectFromMainThread);
-                        SetAct(StopReceiveUDPFromMainThread);
-                        break;
+                        SetAct(CreateJoinButtonFromMainThread);
+                        continue;
                     }
                     else receivedUDPData = message;
                 }
@@ -541,10 +500,21 @@ namespace LTTDIT.Net
             }
         }
 
-        private void ConnectFromMainThread()
+        private void StopReceiveUDPFromMainThread()
         {
-            RemAct(ConnectFromMainThread);
-            ShowJoinButton(receivedIp, receivedNickname, receivedApplication);
+            RemAct(StopReceiveUDPFromMainThread);
+            StopReceiveUDP();
+        }
+
+        private void CreateJoinButtonFromMainThread()
+        {
+            RemAct(CreateJoinButtonFromMainThread);
+            setJoinButton?.Invoke(receivedIp, receivedNickname, receivedApplication, JoinButtonPressed);
+        }
+
+        public void SetCreateJoinButtonDelegate(SetDelegateToJoinButton setDelegateToJoinButton)
+        {
+            setJoinButton = setDelegateToJoinButton;
         }
 
         private void StartBroadcastUDP()
@@ -575,12 +545,12 @@ namespace LTTDIT.Net
         private void BroadcastUDP()
         {
             broadcastUDPTime += Time.deltaTime;
-            if (broadcastUDPTime > broadcastUDPCooldown)
+            if (broadcastUDPTime >= broadcastUDPCooldown)
             {
                 broadcastUDPTime = 0f;
                 try
                 {
-                    string message = Information.SetJoinCommand(myIPAddress.ToString(), application, myNickname);
+                    string message = Information.SetJoinCommand(myIPAddress.ToString(), myApplication, myNickname);
                     byte[] data = GetByteArrayFromString(message);
                     udpServer.Send(data, data.Length);
                 }
@@ -601,7 +571,6 @@ namespace LTTDIT.Net
         {
             return Encoding.Unicode.GetString(infoToEncode);
         }
-
 
         public class ClientObject
         {
@@ -625,19 +594,15 @@ namespace LTTDIT.Net
 
             protected internal string GetMessage()
             {
-                if (HasData())
+                byte[] data = new byte[64];
+                StringBuilder builder = new StringBuilder();
+                do
                 {
-                    byte[] data = new byte[64];
-                    StringBuilder builder = new StringBuilder();
-                    do
-                    {
-                        int bytes = UserStream.Read(data, 0, data.Length);
-                        builder.Append(Encoding.Unicode.GetString(data, 0, bytes));
-                    }
-                    while (HasData());
-                    return builder.ToString();
+                    int bytes = UserStream.Read(data, 0, data.Length);
+                    builder.Append(Encoding.Unicode.GetString(data, 0, bytes));
                 }
-                return string.Empty;
+                while (HasData());
+                return builder.ToString();
             }
 
             protected internal void Close()
