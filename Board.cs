@@ -11,11 +11,19 @@ namespace LTTDIT.TicTacToe
         [SerializeField] private StepXO stepXOPrefab;
 
         [SerializeField] private RectTransform rectTransform;
-        [SerializeField] private Camera mCamera;
+
+        public delegate void MakeTurnDelegate(int pos_x, int pos_y);
+        private MakeTurnDelegate makeTurn;
+        private delegate void WaitDelegate();
+        private WaitDelegate wait;
+        private WaitDelegate enemyMadeTurn;
+
+        private const float WaitTime = 5f;
+        private float currentWaitTime = 0f;
 
         private int sizeX = 0;
         private int sizeY = 0;
-        private const int toWin = 3;
+        private const int toWin = 5;
 
         private const float widthBoardLineRelative = 0.09f;
         private float widthHalfBoardLineAbsolute;
@@ -24,6 +32,7 @@ namespace LTTDIT.TicTacToe
         private Vector2 centerPos;
 
         private Players currentPlayerTurn;
+        private Players hostPlayer;
         private int currentX;
         private int currentY;
         private BoardLine currentLineX;
@@ -32,6 +41,8 @@ namespace LTTDIT.TicTacToe
         private bool drawRedLines = false;
 
         private Dictionary<BoardPoint, StepXO> stepXOs = new Dictionary<BoardPoint, StepXO>();
+        private List<BoardPoint> winOrLosePoints = new List<BoardPoint>();
+        private List<BoardLine> winOrLoseLines = new List<BoardLine>();
 
         private readonly List<BoardPoint> boardPointsForIteratinos = new List<BoardPoint>()
         {
@@ -49,6 +60,28 @@ namespace LTTDIT.TicTacToe
             Both,
             Draw,
             PlayerError,
+        }
+
+        private void Update()
+        {
+            wait?.Invoke();
+        }
+
+        public void SetMakeTurnDelegate(MakeTurnDelegate makeTurnDelegate)
+        {
+            makeTurn = makeTurnDelegate;
+        }
+
+        public void SetMeAsFirstPlayerTurn()
+        {
+            currentPlayerTurn = Players.Me;
+            hostPlayer = Players.Me;
+        }
+
+        public void SetMyEnemyAsFirstPlayerTurn()
+        {
+            currentPlayerTurn = Players.MyEnemy;
+            hostPlayer = Players.MyEnemy;
         }
 
         public void SetSize(int width, int height)
@@ -74,13 +107,6 @@ namespace LTTDIT.TicTacToe
             proportionalRectHeight = rectTransform.rect.height * proportionX;
             centerPos = _camera.WorldToScreenPoint(rectTransform.position);
             centerPos -= new Vector2(proportionalRectWidth * 0.5f, proportionalRectHeight * 0.5f);
-        }
-
-        private void Start()
-        {
-            SetCamera(mCamera);
-            SetSize(10);
-            currentPlayerTurn = Players.Me;
         }
 
         private void DrawLines()
@@ -167,7 +193,11 @@ namespace LTTDIT.TicTacToe
 
         public void OnPointerUp(PointerEventData eventData)
         {
-            if (drawRedLines) MakeTurn(currentX, currentY, currentPlayerTurn);
+            if (drawRedLines && (currentPlayerTurn == Players.Me) && !DictionaryContainsPoint(new BoardPoint(currentX, currentY)))
+            {
+                MakeTurn(currentX, currentY, currentPlayerTurn);
+                makeTurn?.Invoke(currentX, currentY);
+            }
             currentX = 0;
             currentY = 0;
             DestroyLineX();
@@ -196,7 +226,7 @@ namespace LTTDIT.TicTacToe
             DestroyLineY();
         }
 
-        public void ClearStepsXO()
+        private void ClearStepsXO()
         {
             foreach (StepXO xo in stepXOs.Values)
             {
@@ -231,14 +261,17 @@ namespace LTTDIT.TicTacToe
                 Players playerPoint = stepXOs[boardPoint].GetBoardPlayer();
                 foreach (BoardPoint pointIteration in boardPointsForIteratinos)
                 {
+                    winOrLosePoints = new List<BoardPoint>() { boardPoint };
                     int count = 1;
                     while (CheckToContinue(boardPoint + pointIteration * count, playerPoint))
                     {
+                        winOrLosePoints.Add(boardPoint + pointIteration * count);
                         count++;
                     }
                     if (count >= toWin) return playerPoint;
                 }
             }
+            winOrLosePoints.Clear();
             if (stepXOs.Count == sizeX * sizeY) return Players.Draw;
             return Players.Nobody;
         }
@@ -253,45 +286,90 @@ namespace LTTDIT.TicTacToe
             return false;
         }
 
+        public void EnemyMadeMove(int pos_x, int pos_y)
+        {
+            MakeTurn(pos_x, pos_y, Players.MyEnemy);
+        }
+
         private void MakeTurn(int pos_x, int pos_y, Players player)
         {
-            BoardPoint boardPoint = new BoardPoint(pos_x, pos_y);
-            if (DictionaryContainsPoint(boardPoint)) return;
             StepXO stepXOl = Instantiate(stepXOPrefab, rectTransform);
-            stepXOs.Add(boardPoint, stepXOl);
+            stepXOs.Add(new BoardPoint(pos_x, pos_y), stepXOl);
             stepXOl.SetOffsets(new Vector2(-(sizeX - pos_x) * rectTransform.rect.width / sizeX - 2f * widthHalfBoardLineAbsolute,
                 -(sizeY - pos_y) * rectTransform.rect.height / sizeY - 2f * widthHalfBoardLineAbsolute),
                 new Vector2((pos_x - 1) * rectTransform.rect.width / sizeX + 2f * widthHalfBoardLineAbsolute,
                 (pos_y - 1) * rectTransform.rect.height / sizeY + 2f * widthHalfBoardLineAbsolute));
-            if (player == Players.Me)
-            {
-                stepXOl.SetX(player);
-                currentPlayerTurn = Players.MyEnemy;
-            }
-            else if (player == Players.MyEnemy)
-            {
-                stepXOl.SetO(player);
-                currentPlayerTurn = Players.Me;
-            }
+            if (player == hostPlayer) stepXOl.SetX(player);
+            else stepXOl.SetO(player);
+            CheckToWin();
+        }
+
+        private void ChangeCurrentPlayerTurn()
+        {
+            if (currentPlayerTurn == Players.MyEnemy) currentPlayerTurn = Players.Me;
+            else if (currentPlayerTurn == Players.Me) currentPlayerTurn = Players.MyEnemy;
+        }
+
+        private void CheckToWin()
+        {
             Players winner = WhoWins();
             if (winner == Players.Me) IWon();
             else if (winner == Players.MyEnemy) ILose();
             else if (winner == Players.Draw) Draw();
+            else if (winner == Players.Nobody) ChangeCurrentPlayerTurn();
+        }
+
+        private void ShowWinOrLosePointsAndStartWait()
+        {
+            foreach (BoardPoint point in winOrLosePoints)
+            {
+                ColorPoint(point);
+            }
+            winOrLosePoints.Clear();
+            wait += LateClearAndChangePlayerTurn;
+        }
+
+        private void LateClearAndChangePlayerTurn()
+        {
+            currentWaitTime += Time.deltaTime;
+            if (currentWaitTime >= WaitTime)
+            {
+                currentWaitTime = 0f;
+                wait -= LateClearAndChangePlayerTurn;
+                foreach (BoardLine line in winOrLoseLines)
+                {
+                    Destroy(line.gameObject);
+                }
+                winOrLoseLines.Clear();
+                ClearStepsXO();
+                ChangeCurrentPlayerTurn();
+            }
+        }
+
+        private void ColorPoint(BoardPoint boardPoint)
+        {
+            BoardLine boardLine = Instantiate(boardLinePrefab, rectTransform);
+            boardLine.GetComponent<Image>().color = new Color(0.9f, 0.2f, 0.2f, 0.7f);
+            boardLine.SetOffsets(new Vector2(-(sizeX - boardPoint.Pos_X) * rectTransform.rect.width / sizeX - widthHalfBoardLineAbsolute,
+                -(sizeY - boardPoint.Pos_Y) * rectTransform.rect.height / sizeY - widthHalfBoardLineAbsolute),
+                new Vector2((boardPoint.Pos_X - 1) * rectTransform.rect.width / sizeX + widthHalfBoardLineAbsolute,
+                (boardPoint.Pos_Y - 1) * rectTransform.rect.height / sizeY + widthHalfBoardLineAbsolute));
+            winOrLoseLines.Add(boardLine);
         }
 
         private void IWon()
         {
-            ClearStepsXO();
+            ShowWinOrLosePointsAndStartWait();
         }
 
         private void ILose()
         {
-            ClearStepsXO();
+            ShowWinOrLosePointsAndStartWait();
         }
 
         private void Draw()
         {
-            ClearStepsXO();
+            ShowWinOrLosePointsAndStartWait();
         }
     }
 

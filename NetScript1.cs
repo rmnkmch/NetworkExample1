@@ -12,13 +12,21 @@ namespace LTTDIT.Net
         private delegate void Act();
         private Act act;
         private Act availableCheck;
+        private Act sendMessageAsManually;
         public delegate void CreateJoinButtonDelegate(string ip, string nick, Information.Applications app);
         public delegate void SetDelegateToJoinButton(string ip, string nick, Information.Applications app,
             CreateJoinButtonDelegate createJoinButtonDelegate);
         private SetDelegateToJoinButton setJoinButton;
+        public delegate void CreateChatMessageDelegate(string message);
+        private CreateChatMessageDelegate createChatMessage;
+        public delegate string GetManuallySendableMessageDelegate();
+        private GetManuallySendableMessageDelegate getManuallySendableMessage;
+        public delegate void EnemyMadeMoveDelegate(int pos_x, int pos_y);
+        private EnemyMadeMoveDelegate enemyMadeMove;
 
         private TcpListener tcpListener;
         private List<ClientObject> clientObjects = new List<ClientObject>();
+        private int maxClientsNumber = 1;
         private TcpClient tcpClient;
         private NetworkStream networkStream;
         private const float availableCooldown = 1f;
@@ -38,10 +46,16 @@ namespace LTTDIT.Net
         private IPAddress myIPAddress;
         private string myNickname = string.Empty;
         private Information.Applications myApplication = Information.Applications.ApplicationError;
+        private Role myRole = Role.RoleError;
 
         private string receivedIp = string.Empty;
         private string receivedNickname = string.Empty;
         private Information.Applications receivedApplication = Information.Applications.ApplicationError;
+
+        private int receivedPosX = 0;
+        private int receivedPosY = 0;
+        private float currentTimeToShowEnemyMove = 0f;
+        private const float TimeToShowEnemyMove = 0.5f;
 
         public static NetScript1 instance;
 
@@ -49,6 +63,28 @@ namespace LTTDIT.Net
         private const int ChatSceneId = 1;
         private const int TicTacToeSceneId = 2;
         private int currentSceneId = 0;
+
+        public enum Role
+        {
+            Host,
+            Client,
+            RoleError,
+        }
+
+        private Role GetRole()
+        {
+            return myRole;
+        }
+
+        public bool IsHost()
+        {
+            return GetRole() == Role.Host;
+        }
+
+        public bool IsClient()
+        {
+            return GetRole() == Role.Client;
+        }
 
         public bool SetNickname(string nick_name)
         {
@@ -69,11 +105,14 @@ namespace LTTDIT.Net
 
         private void JoinButtonPressed(string ip, string nick, Information.Applications app)
         {
+            myRole = Role.Client;
+            myApplication = app;
             StopReceiveUDP();
             StartTCPClientProcess(ip);
             if (app == Information.Applications.Chat)
             {
                 LoadChatScene();
+                sendMessageAsManually = SendMessageAsClientManually;
             }
             else if (app == Information.Applications.TicTacToe)
             {
@@ -88,18 +127,23 @@ namespace LTTDIT.Net
 
         public void ChatSelected()
         {
+            myRole = Role.Host;
             myApplication = Information.Applications.Chat;
             LoadChatScene();
             StartBroadcastUDP();
             StartTCPHostProcess();
+            sendMessageAsManually = SendMessageAsHostManually;
+            maxClientsNumber = 10;
         }
 
         public void TicTacToeSelected()
         {
+            myRole = Role.Host;
             myApplication = Information.Applications.TicTacToe;
             LoadTicTacToeScene();
             StartBroadcastUDP();
             StartTCPHostProcess();
+            maxClientsNumber = 1;
         }
 
         private void ChangeScene(int sceneId)
@@ -205,8 +249,8 @@ namespace LTTDIT.Net
                     {
                         string message = clientObjects[i].GetMessage();
                         if (Information.IsAvailableCommand(message)) return;
-                        message = string.Format("{0}: {1}", clientObjects[i].userName, message);
-                        ShowInfo(message);
+                        ProcessTCPCommand(message);
+                        //message = string.Format("{0}: {1}", clientObjects[i].userName, message);
                         SendBroadcastTCPMessage(message, clientObjects[i].UID);
                     }
                 }
@@ -230,6 +274,7 @@ namespace LTTDIT.Net
                     string helloMessage = string.Format("\"{0}\" joined!", clientObjectl.userName);
                     ShowInfo(helloMessage);
                     SendBroadcastTCPMessage(helloMessage, clientObjectl.UID);
+                    if (ShouldTheRoomBeClosed()) CloseRoomByHost();
                 }
             }
             catch (Exception ex)
@@ -257,11 +302,31 @@ namespace LTTDIT.Net
             }
         }
 
+        private bool ShouldTheRoomBeClosed()
+        {
+            return clientObjects.Count >= maxClientsNumber;
+        }
+
+        private void CloseRoomByHost()
+        {
+            StopBroadcastUDP();
+            RemAct(ListenTCPAuto);
+            if (tcpListener != null)
+            {
+                tcpListener.Stop();
+                tcpListener = null;
+            }
+            ShowInfo("Room closed!");
+        }
+
         private void DisconnectTCPHost()
         {
             StopAvailableCheck();
             RemAct(ListenTCPAuto);
             RemAct(BroadcastTCPResendAuto);
+            createChatMessage = null;
+            sendMessageAsManually = null;
+            enemyMadeMove = null;
             if (tcpListener != null)
             {
                 tcpListener.Stop();
@@ -290,7 +355,7 @@ namespace LTTDIT.Net
                     }
                     while (networkStream.DataAvailable);
                     string message = builder.ToString();
-                    if (!Information.IsAvailableCommand(message)) ShowInfo(message);
+                    if (!Information.IsAvailableCommand(message)) ProcessTCPCommand(message);
                 }
             }
             catch (Exception ex)
@@ -346,6 +411,9 @@ namespace LTTDIT.Net
         {
             StopAvailableCheck();
             RemAct(ReceiveTCPMessageAuto);
+            createChatMessage = null;
+            sendMessageAsManually = null;
+            enemyMadeMove = null;
             if (networkStream != null)
             {
                 networkStream.Close();
@@ -355,6 +423,44 @@ namespace LTTDIT.Net
             {
                 tcpClient.Close();
                 tcpClient = null;
+            }
+        }
+
+        private void ProcessTCPCommand(string data)
+        {
+            ShowInfo(data);
+            List<string> divided = Information.GetDividedCommands(data);
+            foreach (string dividedCommand in divided)
+            {
+                if (Information.IsData(dividedCommand))
+                {
+                    Information.TypesOfData receivedTypeOfData = Information.GetTypeOfData(dividedCommand);
+                    if (receivedTypeOfData == Information.TypesOfData.TicTacToePosX)
+                    {
+                        receivedPosX = int.Parse(Information.GetData(dividedCommand, receivedTypeOfData));
+                    }
+                    else if (receivedTypeOfData == Information.TypesOfData.TicTacToePosY)
+                    {
+                        receivedPosY = int.Parse(Information.GetData(dividedCommand, receivedTypeOfData));
+                    }
+                    else if (receivedTypeOfData == Information.TypesOfData.TurnWasMade)
+                    {
+                        SetAct(PositionsReceivedAndWillBeSentSoon);
+                    }
+                }
+            }
+        }
+
+        private void PositionsReceivedAndWillBeSentSoon()
+        {
+            currentTimeToShowEnemyMove += Time.deltaTime;
+            if ((currentTimeToShowEnemyMove >= TimeToShowEnemyMove) && (receivedPosX != 0) && (receivedPosY != 0))
+            {
+                RemAct(PositionsReceivedAndWillBeSentSoon);
+                enemyMadeMove?.Invoke(receivedPosX, receivedPosY);
+                receivedPosX = 0;
+                receivedPosY = 0;
+                currentTimeToShowEnemyMove = 0f;
             }
         }
 
@@ -371,10 +477,13 @@ namespace LTTDIT.Net
         private void ShowInfo(string info)
         {
             Debug.Log(info);
+            createChatMessage?.Invoke(info);
         }
 
         public void Exitt()
         {
+            myRole = Role.RoleError;
+            myApplication = Information.Applications.ApplicationError;
             DisconnectTCPHost();
             DisconnectTCPClient();
             StopBroadcastUDP();
@@ -517,6 +626,21 @@ namespace LTTDIT.Net
             setJoinButton = setDelegateToJoinButton;
         }
 
+        public void SetCreateChatMessageDelegate(CreateChatMessageDelegate createChatMessageDelegate)
+        {
+            createChatMessage = createChatMessageDelegate;
+        }
+
+        public void SetGetManuallySendableMessageDelegate(GetManuallySendableMessageDelegate getManuallySendableMessageDelegate)
+        {
+            getManuallySendableMessage = getManuallySendableMessageDelegate;
+        }
+
+        public void SetEnemyMadeMoveDelegate(EnemyMadeMoveDelegate enemyMadeMoveDelegate)
+        {
+            enemyMadeMove = enemyMadeMoveDelegate;
+        }
+
         private void StartBroadcastUDP()
         {
             try
@@ -560,6 +684,38 @@ namespace LTTDIT.Net
                     ShowInfo("BroadcastUDP - " + ex.Message);
                 }
             }
+        }
+
+        private void SendMessageAsHostManually()
+        {
+            string message = getManuallySendableMessage?.Invoke();
+            message = myNickname + "(host): " + message;
+            ShowInfo(message);
+            SendBroadcastTCPMessage(message, string.Empty);
+        }
+
+        private void SendMessageAsClientManually()
+        {
+            string message = getManuallySendableMessage?.Invoke();
+            ShowInfo(myNickname + ": " + message);
+            SendTCPMessageAsClient(message);
+        }
+
+        public void SendMessageAsManually()
+        {
+            sendMessageAsManually?.Invoke();
+        }
+
+        public void SendXODataAsHost(string data)
+        {
+            SendBroadcastTCPMessage(data, string.Empty);
+            ShowInfo(data);
+        }
+
+        public void SendXODataAsClient(string data)
+        {
+            SendTCPMessageAsClient(data);
+            ShowInfo(data);
         }
 
         private static byte[] GetByteArrayFromString(string infoToEncode)
