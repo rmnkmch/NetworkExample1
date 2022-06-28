@@ -12,17 +12,20 @@ namespace LTTDIT.Net
 
         [SerializeField] private Text nicknameButtonText;
         [SerializeField] private InputField nicknameInputField;
+        [SerializeField] private Text invitationText;
 
         [SerializeField] private GameObject nicknamePanel;
         [SerializeField] private GameObject applicationsPanel;
         [SerializeField] private GameObject joinToPanel;
+        [SerializeField] private GameObject invitationPanel;
 
         private List<ChooseIP> joinButtons = new List<ChooseIP>();
         private List<ChooseIP> buttonsToDelete = new List<ChooseIP>();
 
         private void Start()
         {
-            NetScript1.instance.SetCreateJoinButtonDelegate(CreateJoinButton);
+            NetScript1.instance.SetCreateButtonDelegate(CreateJoinButton);
+            NetScript1.instance.SetInvitationReceivedDelegate(InvitationReceived);
             if (!NetScript1.instance.HasNickname()) ChangeNicknameButtonPressed();
             else nicknameButtonText.text = NetScript1.instance.GetNickname();
         }
@@ -82,6 +85,7 @@ namespace LTTDIT.Net
 
         public void BackFromJoinPanelButtonPressed()
         {
+            Net.NetScript1.instance.Exitt();
             joinToPanel.SetActive(false);
         }
 
@@ -97,6 +101,7 @@ namespace LTTDIT.Net
 
         public void QiutButtonPressed()
         {
+            NetScript1.instance.Exitt();
             Application.Quit();
         }
 
@@ -113,15 +118,33 @@ namespace LTTDIT.Net
             return false;
         }
 
-        private void CreateJoinButton(string ip, string nick, Information.Applications app, NetScript1.CreateJoinButtonDelegate createJoinButtonDelegate)
+        private void CreateJoinButton(string ip, string nick, Information.Applications app, NetScript1.CreateButtonDelegate createButtonDelegate)
         {
             if (!JoinButtonsListContainsAndReliving(ip, app))
             {
                 ChooseIP joinButton = Instantiate(JoinButtonPrefab, joinButtonsTransform);
                 joinButton.SetJoinButton(ip, nick, app);
-                joinButton.SetDelegateWithData(createJoinButtonDelegate);
+                joinButton.SetDelegateWithData(createButtonDelegate);
                 joinButtons.Add(joinButton);
             }
+        }
+
+        private void InvitationReceived(string application, string nickname)
+        {
+            invitationPanel.SetActive(true);
+            invitationText.text = "App: " + application + ",  Nickname: " + nickname;
+        }
+
+        public void AcceptInvitation()
+        {
+            invitationPanel.SetActive(false);
+            NetScript1.instance.AcceptInvitation();
+        }
+
+        public void RefuseInvitation()
+        {
+            invitationPanel.SetActive(false);
+            NetScript1.instance.RefuseInvitation();
         }
     }
 }

@@ -3,36 +3,36 @@ using UnityEngine.UI;
 
 namespace LTTDIT.Net
 {
-    public class ChooseIP : MonoBehaviour
+    public class InviteButton : MonoBehaviour
     {
-        [SerializeField] private Text showableText;
-
-        private NetScript1.CreateButtonDelegate pressedWithData;
+        [SerializeField] private Text buttonText;
 
         private string ipAddress;
         private string nickname;
         private Information.Applications application;
 
+        private NetScript1.CreateButtonDelegate buttonPressed;
+
         private const float LifeTime = NetScript1.BroadcastUdpCooldown * 3f;
         private float currentLifeTime = 0f;
 
-        public void SetJoinButton(string ip, string nick_name, Information.Applications app)
+        public void SetButton(string ip, string nick, Information.Applications app)
         {
+            buttonText.text = "Ip: " + ip + ",   Nick: " + nick;
             ipAddress = ip;
-            nickname = nick_name;
+            nickname = nick;
             application = app;
-            showableText.text = "Ip: " + ip + ",   Nickname: " + nick_name + ",   App: " + Information.StringApplications[app];
         }
 
-        public void SetDelegateWithData(NetScript1.CreateButtonDelegate _pressedWithData)
+        public void SetPressedDelegate(NetScript1.CreateButtonDelegate createButtonDelegate)
         {
-            pressedWithData = _pressedWithData;
+            buttonPressed = createButtonDelegate;
         }
 
         public void ButtonPressed()
         {
-            pressedWithData?.Invoke(ipAddress, nickname, application);
-            pressedWithData = null;
+            buttonPressed?.Invoke(ipAddress, nickname, application);
+            buttonPressed = null;
         }
 
         public string GetIpAddress()

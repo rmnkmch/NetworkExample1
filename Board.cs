@@ -16,14 +16,13 @@ namespace LTTDIT.TicTacToe
         private MakeTurnDelegate makeTurn;
         private delegate void WaitDelegate();
         private WaitDelegate wait;
-        private WaitDelegate enemyMadeTurn;
 
-        private const float WaitTime = 5f;
+        private const float WaitTime = 4f;
         private float currentWaitTime = 0f;
 
         private int sizeX = 0;
         private int sizeY = 0;
-        private const int toWin = 5;
+        private int toWin = 0;
 
         private const float widthBoardLineRelative = 0.09f;
         private float widthHalfBoardLineAbsolute;
@@ -31,8 +30,9 @@ namespace LTTDIT.TicTacToe
         private float proportionalRectHeight;
         private Vector2 centerPos;
 
-        private Players currentPlayerTurn;
+        private Players currentPlayerTurn = Players.PlayerError;
         private Players hostPlayer;
+        private Players winner;
         private int currentX;
         private int currentY;
         private BoardLine currentLineX;
@@ -97,6 +97,11 @@ namespace LTTDIT.TicTacToe
         public void SetSize(int width_height)
         {
             SetSize(width_height, width_height);
+        }
+
+        public void SetToWin(int _toWin)
+        {
+            toWin = _toWin;
         }
 
         public void SetCamera(Camera _camera)
@@ -308,11 +313,16 @@ namespace LTTDIT.TicTacToe
         {
             if (currentPlayerTurn == Players.MyEnemy) currentPlayerTurn = Players.Me;
             else if (currentPlayerTurn == Players.Me) currentPlayerTurn = Players.MyEnemy;
+            else if (currentPlayerTurn == Players.PlayerError)
+            {
+                if (winner == Players.MyEnemy) currentPlayerTurn = Players.Me;
+                else if (winner == Players.Me) currentPlayerTurn = Players.MyEnemy;
+            }
         }
 
         private void CheckToWin()
         {
-            Players winner = WhoWins();
+            winner = WhoWins();
             if (winner == Players.Me) IWon();
             else if (winner == Players.MyEnemy) ILose();
             else if (winner == Players.Draw) Draw();
@@ -359,11 +369,13 @@ namespace LTTDIT.TicTacToe
 
         private void IWon()
         {
+            currentPlayerTurn = Players.PlayerError;
             ShowWinOrLosePointsAndStartWait();
         }
 
         private void ILose()
         {
+            currentPlayerTurn = Players.PlayerError;
             ShowWinOrLosePointsAndStartWait();
         }
 

@@ -18,10 +18,11 @@ namespace LTTDIT.TicTacToe
         {
             myNickNameText.text = Net.NetScript1.instance.GetNickname();
             gameBoard.SetCamera(mCamera);
-            gameBoard.SetSize(10);
+            gameBoard.SetSize(9);
+            gameBoard.SetToWin(5);
             gameBoard.SetMakeTurnDelegate(MyTurnWasMade);
             Net.NetScript1.instance.SetEnemyMadeMoveDelegate(EnemyTurnWasMade);
-            if (Net.NetScript1.instance.IsHost()) gameBoard.SetMeAsFirstPlayerTurn();
+            if (Net.NetScript1.instance.IsHost()) Net.NetScript1.instance.SetShowSecondPlayerNicknameAndSetTurnDelegate(ShowSecondPlayerNickname);
             else if (Net.NetScript1.instance.IsClient()) gameBoard.SetMyEnemyAsFirstPlayerTurn();
         }
 
@@ -41,6 +42,13 @@ namespace LTTDIT.TicTacToe
             myTurn.SetActive(true);
             myEnemyTurn.SetActive(false);
             gameBoard.EnemyMadeMove(pos_x, pos_y);
+        }
+
+        private void ShowSecondPlayerNickname(string nick)
+        {
+            myEnemyNicknameText.text = nick;
+            gameBoard.SetMeAsFirstPlayerTurn();
+            myTurn.SetActive(true);
         }
 
         public void ExitRoom()

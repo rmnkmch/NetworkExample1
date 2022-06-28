@@ -21,6 +21,9 @@ namespace LTTDIT.Net
             DataFlag,
             StartDataFlag,
             EndDataFlag,
+            InvitationAcceptedFlag,
+            InvitationRefusedFlag,
+            InvitationFlag,
         }
 
         public static readonly Dictionary<Commands, string> StringCommands = new Dictionary<Commands, string>()
@@ -40,6 +43,9 @@ namespace LTTDIT.Net
             [Commands.DataFlag] = "Data",
             [Commands.StartDataFlag] = "<data>",
             [Commands.EndDataFlag] = "</data>",
+            [Commands.InvitationAcceptedFlag] = "<InvitationAcceptedFlag>",
+            [Commands.InvitationRefusedFlag] = "<InvitationRefusedFlag>",
+            [Commands.InvitationFlag] = "InvitationFlag",
         };
 
         public enum Applications
@@ -62,6 +68,7 @@ namespace LTTDIT.Net
             TicTacToePosX,
             TicTacToePosY,
             TurnWasMade,
+            ChatMessage,
         }
 
         public static readonly Dictionary<TypesOfData, string> StringTypesOfData = new Dictionary<TypesOfData, string>()
@@ -70,6 +77,7 @@ namespace LTTDIT.Net
             [TypesOfData.TicTacToePosX] = "TicTacToePosX",
             [TypesOfData.TicTacToePosY] = "TicTacToePosY",
             [TypesOfData.TurnWasMade] = "TurnWasMade",
+            [TypesOfData.ChatMessage] = "ChatMessage",
         };
 
         public static List<string> GetDividedCommands(string message)
@@ -156,6 +164,11 @@ namespace LTTDIT.Net
                 symbolNumber++;
             }
             return ret;
+        }
+
+        public static string SetApplicationCommand(Applications application)
+        {
+            return SetStringToCommand(SetHeader(GetStringCommand(Commands.ApplicationFlag)) + SetInfo(StringApplications[application]));
         }
 
         public static bool IsApplication(string toCheck)
@@ -284,6 +297,23 @@ namespace LTTDIT.Net
                 GetDividerCommand() + SetStringToCommand(SetHeader(GetStringCommand(Commands.NicknameFlag)) + SetInfo(nickname));
         }
 
+        public static string SetInviteMeCommand(string ipAddress, string nickname)
+        {
+            return SetStringToCommand(SetHeader(GetStringCommand(Commands.IpAddressFlag)) + SetInfo(ipAddress)) +
+                GetDividerCommand() + SetStringToCommand(SetHeader(GetStringCommand(Commands.NicknameFlag)) + SetInfo(nickname));
+        }
+
+        public static string SetChatMessageCommand(string nickname, string message)
+        {
+            return SetStringToCommand(SetHeader(GetStringCommand(Commands.NicknameFlag)) + SetInfo(nickname)) +
+                GetDividerCommand() + SetDataCommand(TypesOfData.ChatMessage, message);
+        }
+
+        public static string SetNicknameCommand(string nickname)
+        {
+            return SetStringToCommand(SetHeader(GetStringCommand(Commands.NicknameFlag)) + SetInfo(nickname));
+        }
+
         public static string GetAvailableCommand()
         {
             return SetStringToCommand(GetStringCommand(Commands.AvailableFlag));
@@ -292,6 +322,36 @@ namespace LTTDIT.Net
         public static bool IsAvailableCommand(string toCheck)
         {
             return toCheck == GetAvailableCommand();
+        }
+
+        public static string GetInvitationAcceptedCommand()
+        {
+            return SetStringToCommand(GetStringCommand(Commands.InvitationAcceptedFlag));
+        }
+
+        public static bool IsInvitationAcceptedCommand(string toCheck)
+        {
+            return toCheck == GetInvitationAcceptedCommand();
+        }
+
+        public static string GetInvitationRefusedCommand()
+        {
+            return SetStringToCommand(GetStringCommand(Commands.InvitationRefusedFlag));
+        }
+
+        public static bool IsInvitationRefusedCommand(string toCheck)
+        {
+            return toCheck == GetInvitationRefusedCommand();
+        }
+
+        public static string GetInvitationCommand()
+        {
+            return SetStringToCommand(GetStringCommand(Commands.InvitationFlag));
+        }
+
+        public static bool IsInvitationCommand(string toCheck)
+        {
+            return toCheck == GetInvitationCommand();
         }
 
         public static string GetDividerCommand()
