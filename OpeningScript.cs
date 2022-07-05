@@ -19,6 +19,10 @@ namespace LTTDIT.Net
         [SerializeField] private GameObject joinToPanel;
         [SerializeField] private GameObject invitationPanel;
 
+        [SerializeField] private TicTacToe.TicTacToeSettings ticTacToeSettings;
+
+        [SerializeField] private Button ticTacToeAppButton;
+
         private List<ChooseIP> joinButtons = new List<ChooseIP>();
         private List<ChooseIP> buttonsToDelete = new List<ChooseIP>();
 
@@ -28,6 +32,7 @@ namespace LTTDIT.Net
             NetScript1.instance.SetInvitationReceivedDelegate(InvitationReceived);
             if (!NetScript1.instance.HasNickname()) ChangeNicknameButtonPressed();
             else nicknameButtonText.text = NetScript1.instance.GetNickname();
+            ticTacToeAppButton.onClick.AddListener(ticTacToeSettings.ActivatePanel);
         }
 
         private void Update()
@@ -92,11 +97,6 @@ namespace LTTDIT.Net
         public void ChatButtonPressed()
         {
             NetScript1.instance.ChatSelected();
-        }
-
-        public void TicTacToeButtonPressed()
-        {
-            NetScript1.instance.TicTacToeSelected();
         }
 
         public void QiutButtonPressed()

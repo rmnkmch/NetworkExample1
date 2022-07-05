@@ -1,8 +1,4 @@
-
-namespace LTTDIT.Networking
+public class UniversalTCP
 {
-    public class UniversalTCP
-    {
 
-    }
 }

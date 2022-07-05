@@ -18,21 +18,19 @@ namespace LTTDIT.TicTacToe
         {
             myNickNameText.text = Net.NetScript1.instance.GetNickname();
             gameBoard.SetCamera(mCamera);
-            gameBoard.SetSize(9);
-            gameBoard.SetToWin(5);
+            gameBoard.SetSize((int)Net.NetScript1.instance.GetDataByTransceiverData(Net.Information.TransceiverData.TicTacToeBoardSize));
+            gameBoard.SetToWin((int)Net.NetScript1.instance.GetDataByTransceiverData(Net.Information.TransceiverData.TicTacToeWinSize));
             gameBoard.SetMakeTurnDelegate(MyTurnWasMade);
             Net.NetScript1.instance.SetEnemyMadeMoveDelegate(EnemyTurnWasMade);
             if (Net.NetScript1.instance.IsHost()) Net.NetScript1.instance.SetShowSecondPlayerNicknameAndSetTurnDelegate(ShowSecondPlayerNickname);
-            else if (Net.NetScript1.instance.IsClient()) gameBoard.SetMyEnemyAsFirstPlayerTurn();
+            else if (Net.NetScript1.instance.IsClient()) ClientConnected();
         }
 
         private void MyTurnWasMade(int pos_x, int pos_y)
         {
             myTurn.SetActive(false);
             myEnemyTurn.SetActive(true);
-            string message = Net.Information.SetDataCommand(Net.Information.TypesOfData.TicTacToePosX, pos_x.ToString()) +
-                Net.Information.GetDividerCommand() + Net.Information.SetDataCommand(Net.Information.TypesOfData.TicTacToePosY, pos_y.ToString()) +
-                Net.Information.GetDividerCommand() + Net.Information.SetDataCommand(Net.Information.TypesOfData.TurnWasMade, "");
+            string message = Net.Information.SetTicTacToeTurnCommand(pos_x.ToString(), pos_y.ToString());
             if (Net.NetScript1.instance.IsHost()) Net.NetScript1.instance.SendXODataAsHost(message);
             else if (Net.NetScript1.instance.IsClient()) Net.NetScript1.instance.SendXODataAsClient(message);
         }
@@ -49,6 +47,12 @@ namespace LTTDIT.TicTacToe
             myEnemyNicknameText.text = nick;
             gameBoard.SetMeAsFirstPlayerTurn();
             myTurn.SetActive(true);
+        }
+
+        private void ClientConnected()
+        {
+            gameBoard.SetMyEnemyAsFirstPlayerTurn();
+            Net.NetScript1.instance.SendFirstMessageAsClientTicTacToe();
         }
 
         public void ExitRoom()

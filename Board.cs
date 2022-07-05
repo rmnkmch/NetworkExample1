@@ -39,6 +39,7 @@ namespace LTTDIT.TicTacToe
         private BoardLine currentLineY;
 
         private bool drawRedLines = false;
+        private bool isTouched = false;
 
         private Dictionary<BoardPoint, StepXO> stepXOs = new Dictionary<BoardPoint, StepXO>();
         private List<BoardPoint> winOrLosePoints = new List<BoardPoint>();
@@ -198,23 +199,31 @@ namespace LTTDIT.TicTacToe
 
         public void OnPointerUp(PointerEventData eventData)
         {
-            if (drawRedLines && (currentPlayerTurn == Players.Me) && !DictionaryContainsPoint(new BoardPoint(currentX, currentY)))
+            if (isTouched)
             {
-                MakeTurn(currentX, currentY, currentPlayerTurn);
-                makeTurn?.Invoke(currentX, currentY);
+                if (drawRedLines && (currentPlayerTurn == Players.Me) && !DictionaryContainsPoint(new BoardPoint(currentX, currentY)))
+                {
+                    MakeTurn(currentX, currentY, currentPlayerTurn);
+                    makeTurn?.Invoke(currentX, currentY);
+                }
+                currentX = 0;
+                currentY = 0;
+                DestroyLineX();
+                DestroyLineY();
+                isTouched = false;
             }
-            currentX = 0;
-            currentY = 0;
-            DestroyLineX();
-            DestroyLineY();
         }
 
         public void OnPointerDown(PointerEventData eventData)
         {
-            currentX = GetPosX((eventData.position - centerPos).x);
-            currentY = GetPosY((eventData.position - centerPos).y);
-            DrawRedLineX();
-            DrawRedLineY();
+            if (!isTouched)
+            {
+                isTouched = true;
+                currentX = GetPosX((eventData.position - centerPos).x);
+                currentY = GetPosY((eventData.position - centerPos).y);
+                DrawRedLineX();
+                DrawRedLineY();
+            }
         }
 
         public void OnPointerEnter(PointerEventData eventData)

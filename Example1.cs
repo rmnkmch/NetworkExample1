@@ -1,9 +1,6 @@
 using UnityEngine;
 
-namespace LTTDIT.Net
+public class Example1 : MonoBehaviour
 {
-    public class Example1 : MonoBehaviour
-    {
 
-    }
 }
