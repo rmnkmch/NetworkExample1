@@ -6,42 +6,36 @@ namespace LTTDIT.Net
     {
         public enum CommandFlags
         {
-            StartHeaderFlag,
-            EndHeaderFlag,
-            ApplicationFlag,
-            AvailableFlag,
-            StartInfoFlag,
-            EndInfoFlag,
-            IpAddressFlag,
+            StartHeader,
+            EndHeader,
+            Available,
+            StartInfo,
+            EndInfo,
             Divider,
-            NicknameFlag,
-            DataFlag,
-            StartDataFlag,
-            EndDataFlag,
-            InvitationAcceptedFlag,
-            InvitationRefusedFlag,
-            InvitationFlag,
-            RequestFlag,
+            Data,
+            StartData,
+            EndData,
+            InvitationAccepted,
+            InvitationRefused,
+            Invitation,
+            Request,
         }
 
         public static readonly Dictionary<CommandFlags, string> StringCommands = new Dictionary<CommandFlags, string>()
         {
-            [CommandFlags.StartHeaderFlag] = "<header>",
-            [CommandFlags.EndHeaderFlag] = "</header>",
-            [CommandFlags.ApplicationFlag] = "ApplicationFlag",
-            [CommandFlags.AvailableFlag] = "<AvailableFlag>",
-            [CommandFlags.StartInfoFlag] = "<info>",
-            [CommandFlags.EndInfoFlag] = "</info>",
-            [CommandFlags.IpAddressFlag] = "IpAddressFlag",
+            [CommandFlags.StartHeader] = "<header>",
+            [CommandFlags.EndHeader] = "</header>",
+            [CommandFlags.Available] = "<Available>",
+            [CommandFlags.StartInfo] = "<info>",
+            [CommandFlags.EndInfo] = "</info>",
             [CommandFlags.Divider] = "<_!_>",
-            [CommandFlags.NicknameFlag] = "NicknameFlag",
-            [CommandFlags.DataFlag] = "DataFlag",
-            [CommandFlags.StartDataFlag] = "<data>",
-            [CommandFlags.EndDataFlag] = "</data>",
-            [CommandFlags.InvitationAcceptedFlag] = "<InvitationAcceptedFlag>",
-            [CommandFlags.InvitationRefusedFlag] = "<InvitationRefusedFlag>",
-            [CommandFlags.InvitationFlag] = "<InvitationFlag>",
-            [CommandFlags.RequestFlag] = "RequestFlag",
+            [CommandFlags.Data] = "Data",
+            [CommandFlags.StartData] = "<data>",
+            [CommandFlags.EndData] = "</data>",
+            [CommandFlags.InvitationAccepted] = "<InvitationAccepted>",
+            [CommandFlags.InvitationRefused] = "<InvitationRefused>",
+            [CommandFlags.Invitation] = "<Invitation>",
+            [CommandFlags.Request] = "Request",
         };
 
         public enum Applications
@@ -69,6 +63,10 @@ namespace LTTDIT.Net
             TicTacToeWinSize,
             MyNickname,
             OtherNickname,
+            MyIpAddress,
+            OtherIpAddress,
+            MyApplication,
+            OtherApplication,
         }
 
         private static readonly Dictionary<TransceiverData, string> StringTypesOfData = new Dictionary<TransceiverData, string>()
@@ -82,7 +80,10 @@ namespace LTTDIT.Net
             [TransceiverData.TicTacToeWinSize] = "TicTacToeWinSize",
             [TransceiverData.MyNickname] = "MyNickname",
             [TransceiverData.OtherNickname] = "OtherNickname",
-
+            [TransceiverData.MyIpAddress] = "MyIpAddress",
+            [TransceiverData.OtherIpAddress] = "OtherIpAddress",
+            [TransceiverData.MyApplication] = "MyApplication",
+            [TransceiverData.OtherApplication] = "OtherApplication",
         };
 
         public static List<string> GetDividedCommands(string message)
@@ -94,7 +95,7 @@ namespace LTTDIT.Net
             int symbol_number = 0;
             while (symbol_number < message.Length)
             {
-                if (message[symbol_number] == GetStringCommand(CommandFlags.Divider)[dividerSymbols])
+                if (message[symbol_number] == GetDividerCommand()[dividerSymbols])
                 {
                     dividerCommand += message[symbol_number];
                     dividerSymbols++;
@@ -106,9 +107,8 @@ namespace LTTDIT.Net
                         currentCommand += dividerCommand;
                         dividerCommand = string.Empty;
                         dividerSymbols = 0;
-                        currentCommand += message[symbol_number];
                     }
-                    else currentCommand += message[symbol_number];
+                    currentCommand += message[symbol_number];
                 }
                 symbol_number++;
                 if (dividerCommand == GetDividerCommand())
@@ -119,7 +119,7 @@ namespace LTTDIT.Net
                     dividerSymbols = 0;
                 }
             }
-            retList.Add(currentCommand);
+            if (currentCommand != string.Empty) retList.Add(currentCommand);
             return retList;
         }
 
@@ -128,76 +128,7 @@ namespace LTTDIT.Net
             return StringCommands[command];
         }
 
-        private static string SetIpAddressCommand(string ipAddress)
-        {
-            return SetHeader(GetStringCommand(CommandFlags.IpAddressFlag)) + SetInfo(ipAddress);
-        }
-
-        public static bool IsIpAddress(string toCheck)
-        {
-            return toCheck.StartsWith(SetHeader(GetStringCommand(CommandFlags.IpAddressFlag)) + GetStringCommand(CommandFlags.StartInfoFlag)) &&
-                toCheck.EndsWith(GetStringCommand(CommandFlags.EndInfoFlag));
-        }
-
-        public static string GetIpAddress(string ip)
-        {
-            string retIP = string.Empty;
-            int ii = (SetHeader(GetStringCommand(CommandFlags.IpAddressFlag)) + GetStringCommand(CommandFlags.StartInfoFlag)).Length;
-            while (ii < ip.Length - GetStringCommand(CommandFlags.EndInfoFlag).Length)
-            {
-                retIP += ip[ii];
-                ii++;
-            }
-            return retIP;
-        }
-
-        public static string SetNicknameCommand(string nickname)
-        {
-            return SetHeader(GetStringCommand(CommandFlags.NicknameFlag)) + SetInfo(nickname);
-        }
-
-        public static bool IsNickname(string toCheck)
-        {
-            return toCheck.StartsWith(SetHeader(GetStringCommand(CommandFlags.NicknameFlag)) + GetStringCommand(CommandFlags.StartInfoFlag)) &&
-                toCheck.EndsWith(GetStringCommand(CommandFlags.EndInfoFlag));
-        }
-
-        public static string GetNickname(string command)
-        {
-            string ret = string.Empty;
-            int symbolNumber = (SetHeader(GetStringCommand(CommandFlags.NicknameFlag)) + GetStringCommand(CommandFlags.StartInfoFlag)).Length;
-            while (symbolNumber < command.Length - GetStringCommand(CommandFlags.EndInfoFlag).Length)
-            {
-                ret += command[symbolNumber];
-                symbolNumber++;
-            }
-            return ret;
-        }
-
-        private static string SetApplicationCommand(Applications application)
-        {
-            return SetHeader(GetStringCommand(CommandFlags.ApplicationFlag)) + SetInfo(StringApplications[application]);
-        }
-
-        public static bool IsApplication(string toCheck)
-        {
-            return toCheck.StartsWith(SetHeader(GetStringCommand(CommandFlags.ApplicationFlag)) + GetStringCommand(CommandFlags.StartInfoFlag)) &&
-                toCheck.EndsWith(GetStringCommand(CommandFlags.EndInfoFlag));
-        }
-
-        public static Applications GetApplication(string command)
-        {
-            string ret = string.Empty;
-            int symbolNumber = (SetHeader(GetStringCommand(CommandFlags.ApplicationFlag)) + GetStringCommand(CommandFlags.StartInfoFlag)).Length;
-            while (symbolNumber < command.Length - GetStringCommand(CommandFlags.EndInfoFlag).Length)
-            {
-                ret += command[symbolNumber];
-                symbolNumber++;
-            }
-            return GetApplicationByString(ret);
-        }
-
-        private static Applications GetApplicationByString(string app)
+        public static Applications GetApplicationByString(string app)
         {
             foreach (Applications ap in StringApplications.Keys)
             {
@@ -208,13 +139,13 @@ namespace LTTDIT.Net
 
         public static string SetDataCommand(TransceiverData typeOfData, string data)
         {
-            return SetHeader(GetStringCommand(CommandFlags.DataFlag)) + SetTypeOfData(typeOfData) + SetData(data);
+            return SetHeader(GetStringCommand(CommandFlags.Data)) + SetTypeOfData(typeOfData) + SetData(data) + GetDividerCommand();
         }
 
         public static bool IsData(string toCheck)
         {
-            return toCheck.StartsWith(SetHeader(GetStringCommand(CommandFlags.DataFlag)) + GetStringCommand(CommandFlags.StartInfoFlag)) &&
-                toCheck.EndsWith(GetStringCommand(CommandFlags.EndDataFlag));
+            return toCheck.StartsWith(SetHeader(GetStringCommand(CommandFlags.Data)) + GetStringCommand(CommandFlags.StartInfo)) &&
+                toCheck.EndsWith(GetStringCommand(CommandFlags.EndData));
         }
 
         public static TransceiverData GetTypeOfData(string command)
@@ -222,10 +153,10 @@ namespace LTTDIT.Net
             string currentTypeOfData = string.Empty;
             string endInfoFlag = string.Empty;
             int endInfoFlagSymbols = 0;
-            int symbol_number = (SetHeader(GetStringCommand(CommandFlags.DataFlag)) + GetStringCommand(CommandFlags.StartInfoFlag)).Length;
+            int symbol_number = (SetHeader(GetStringCommand(CommandFlags.Data)) + GetStringCommand(CommandFlags.StartInfo)).Length;
             while (symbol_number < command.Length)
             {
-                if (command[symbol_number] == GetStringCommand(CommandFlags.EndInfoFlag)[endInfoFlagSymbols])
+                if (command[symbol_number] == GetStringCommand(CommandFlags.EndInfo)[endInfoFlagSymbols])
                 {
                     endInfoFlag += command[symbol_number];
                     endInfoFlagSymbols++;
@@ -237,12 +168,11 @@ namespace LTTDIT.Net
                         currentTypeOfData += endInfoFlag;
                         endInfoFlag = string.Empty;
                         endInfoFlagSymbols = 0;
-                        currentTypeOfData += command[symbol_number];
                     }
-                    else currentTypeOfData += command[symbol_number];
+                    currentTypeOfData += command[symbol_number];
                 }
                 symbol_number++;
-                if (endInfoFlag == GetStringCommand(CommandFlags.EndInfoFlag))
+                if (endInfoFlag == GetStringCommand(CommandFlags.EndInfo))
                 {
                     return GetTransceiverDataFromString(currentTypeOfData);
                 }
@@ -253,9 +183,9 @@ namespace LTTDIT.Net
         public static string GetData(string command, TransceiverData typeOfData)
         {
             string ret = string.Empty;
-            int symbolNumber = (SetHeader(GetStringCommand(CommandFlags.DataFlag)) + SetTypeOfData(typeOfData) +
-                GetStringCommand(CommandFlags.StartDataFlag)).Length;
-            while (symbolNumber < command.Length - GetStringCommand(CommandFlags.EndDataFlag).Length)
+            int symbolNumber = (SetHeader(GetStringCommand(CommandFlags.Data)) + SetTypeOfData(typeOfData) +
+                GetStringCommand(CommandFlags.StartData)).Length;
+            while (symbolNumber < command.Length - GetStringCommand(CommandFlags.EndData).Length)
             {
                 ret += command[symbolNumber];
                 symbolNumber++;
@@ -265,17 +195,17 @@ namespace LTTDIT.Net
 
         private static string SetHeader(string toHeader)
         {
-            return GetStringCommand(CommandFlags.StartHeaderFlag) + toHeader + GetStringCommand(CommandFlags.EndHeaderFlag);
+            return GetStringCommand(CommandFlags.StartHeader) + toHeader + GetStringCommand(CommandFlags.EndHeader);
         }
 
         private static string SetInfo(string toInfo)
         {
-            return GetStringCommand(CommandFlags.StartInfoFlag) + toInfo + GetStringCommand(CommandFlags.EndInfoFlag);
+            return GetStringCommand(CommandFlags.StartInfo) + toInfo + GetStringCommand(CommandFlags.EndInfo);
         }
 
         private static string SetData(string toData)
         {
-            return GetStringCommand(CommandFlags.StartDataFlag) + toData + GetStringCommand(CommandFlags.EndDataFlag);
+            return GetStringCommand(CommandFlags.StartData) + toData + GetStringCommand(CommandFlags.EndData);
         }
 
         private static string SetTypeOfData(TransceiverData typeOfData)
@@ -285,73 +215,69 @@ namespace LTTDIT.Net
 
         public static string SetJoinCommand(string ipAddress, Applications application, string nickname)
         {
-            return SetIpAddressCommand(ipAddress) + GetDividerCommand() + SetApplicationCommand(application) +
-                GetDividerCommand() + SetNicknameCommand(nickname);
+            return SetDataCommand(TransceiverData.OtherIpAddress, ipAddress) + SetDataCommand(TransceiverData.OtherApplication,
+                StringApplications[application]) + SetDataCommand(TransceiverData.MyNickname, nickname);
         }
 
         public static string SetInviteMeCommand(string ipAddress, string nickname)
         {
-            return SetIpAddressCommand(ipAddress) + GetDividerCommand() + SetNicknameCommand(nickname);
+            return SetDataCommand(TransceiverData.OtherIpAddress, ipAddress) + SetDataCommand(TransceiverData.MyNickname, nickname);
         }
 
         public static string SetChatMessageCommand(string nickname, string message)
         {
-            return SetNicknameCommand(nickname) + GetDividerCommand() + SetDataCommand(TransceiverData.ChatMessage, message);
+            return SetDataCommand(TransceiverData.MyNickname, nickname) + SetDataCommand(TransceiverData.ChatMessage, message);
         }
 
         public static string GetAvailableCommand()
         {
-            return GetStringCommand(CommandFlags.AvailableFlag);
-        }
-
-        public static bool IsAvailableCommand(string toCheck)
-        {
-            return toCheck == GetAvailableCommand();
+            return GetStringCommand(CommandFlags.Available) + GetDividerCommand();
         }
 
         public static string SetInvitationAcceptedCommand(string nickname)
         {
-            return SetNicknameCommand(nickname) + GetDividerCommand() + GetInvitationAcceptedCommand();
+            return SetDataCommand(TransceiverData.MyNickname, nickname) + GetInvitationAcceptedCommand();
         }
 
         private static string GetInvitationAcceptedCommand()
         {
-            return GetStringCommand(CommandFlags.InvitationAcceptedFlag);
+            return GetStringCommand(CommandFlags.InvitationAccepted) + GetDividerCommand();
         }
 
         public static bool IsInvitationAcceptedCommand(string toCheck)
         {
-            return toCheck == GetInvitationAcceptedCommand();
+            return toCheck == GetStringCommand(CommandFlags.InvitationAccepted);
         }
 
         public static string SetInvitationRefusedCommand(string nickname)
         {
-            return SetNicknameCommand(nickname) + GetDividerCommand() + GetInvitationRefusedCommand();
+            return SetDataCommand(TransceiverData.MyNickname, nickname) + GetInvitationRefusedCommand();
         }
 
         private static string GetInvitationRefusedCommand()
         {
-            return GetStringCommand(CommandFlags.InvitationRefusedFlag);
+            return GetStringCommand(CommandFlags.InvitationRefused) + GetDividerCommand();
         }
 
         public static bool IsInvitationRefusedCommand(string toCheck)
         {
-            return toCheck == GetInvitationRefusedCommand();
+            return toCheck == GetStringCommand(CommandFlags.InvitationRefused);
         }
 
         public static string SetInvitationCommand(string nickname, Applications application)
         {
-            return SetNicknameCommand(nickname) + GetDividerCommand() + SetApplicationCommand(application) + GetDividerCommand() + GetInvitationCommand();
+            return SetDataCommand(TransceiverData.MyNickname, nickname) +
+                SetDataCommand(TransceiverData.OtherApplication, StringApplications[application]) + GetInvitationCommand();
         }
 
         private static string GetInvitationCommand()
         {
-            return GetStringCommand(CommandFlags.InvitationFlag);
+            return GetStringCommand(CommandFlags.Invitation) + GetDividerCommand();
         }
 
         public static bool IsInvitationCommand(string toCheck)
         {
-            return toCheck == GetInvitationCommand();
+            return toCheck == GetStringCommand(CommandFlags.Invitation);
         }
 
         private static string GetDividerCommand()
@@ -361,8 +287,8 @@ namespace LTTDIT.Net
 
         public static string SetTicTacToeTurnCommand(string posX, string posY)
         {
-            return SetDataCommand(TransceiverData.TicTacToePosX, posX) + GetDividerCommand() + SetDataCommand(TransceiverData.TicTacToePosY, posY) +
-                GetDividerCommand() + SetDataCommand(TransceiverData.TurnWasMade, "");
+            return SetDataCommand(TransceiverData.TicTacToePosX, posX) + SetDataCommand(TransceiverData.TicTacToePosY, posY) +
+                SetDataCommand(TransceiverData.TurnWasMade, "?");
         }
 
         public static string SetRequestCommand(TransceiverData[] transceiverDatas)
@@ -370,26 +296,22 @@ namespace LTTDIT.Net
             string datas = string.Empty;
             for (int i = 0; i < transceiverDatas.Length; i++)
             {
-                datas += SetHeader(GetStringCommand(CommandFlags.RequestFlag)) + SetTypeOfData(transceiverDatas[i]);
-                if (i < transceiverDatas.Length - 1)
-                {
-                    datas += GetDividerCommand();
-                }
+                datas += SetHeader(GetStringCommand(CommandFlags.Request)) + SetTypeOfData(transceiverDatas[i]) + GetDividerCommand();
             }
             return datas;
         }
 
         public static bool IsRequestCommand(string toCheck)
         {
-            return toCheck.StartsWith(SetHeader(GetStringCommand(CommandFlags.RequestFlag)) + GetStringCommand(CommandFlags.StartInfoFlag)) &&
-                toCheck.EndsWith(GetStringCommand(CommandFlags.EndInfoFlag));
+            return toCheck.StartsWith(SetHeader(GetStringCommand(CommandFlags.Request)) + GetStringCommand(CommandFlags.StartInfo)) &&
+                toCheck.EndsWith(GetStringCommand(CommandFlags.EndInfo));
         }
 
         public static TransceiverData GetTransceiverDataFromRequestCommand(string command)
         {
             string ret = string.Empty;
-            int symbolNumber = (SetHeader(GetStringCommand(CommandFlags.RequestFlag)) + GetStringCommand(CommandFlags.StartInfoFlag)).Length;
-            while (symbolNumber < command.Length - GetStringCommand(CommandFlags.EndInfoFlag).Length)
+            int symbolNumber = (SetHeader(GetStringCommand(CommandFlags.Request)) + GetStringCommand(CommandFlags.StartInfo)).Length;
+            while (symbolNumber < command.Length - GetStringCommand(CommandFlags.EndInfo).Length)
             {
                 ret += command[symbolNumber];
                 symbolNumber++;

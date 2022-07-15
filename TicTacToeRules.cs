@@ -51,8 +51,9 @@ namespace LTTDIT.TicTacToe
 
         private void ClientConnected()
         {
+            myEnemyNicknameText.text = (string)Net.NetScript1.instance.GetDataByTransceiverData(Net.Information.TransceiverData.OtherNickname);
             gameBoard.SetMyEnemyAsFirstPlayerTurn();
-            Net.NetScript1.instance.SendFirstMessageAsClientTicTacToe();
+            myEnemyTurn.SetActive(true);
         }
 
         public void ExitRoom()

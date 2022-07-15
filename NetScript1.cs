@@ -13,6 +13,7 @@ namespace LTTDIT.Net
         private Act act;
         private Act availableCheck;
         private Act sendMessageAsManually;
+        private Act requestInfo;
         public delegate void CreateButtonDelegate(string ip, string nick, Information.Applications app);
         public delegate void SetDelegateToButton(string ip, string nick, Information.Applications app,
             CreateButtonDelegate createButtonDelegate);
@@ -44,17 +45,18 @@ namespace LTTDIT.Net
         private string receivedUdpData = string.Empty;
         private float broadcastUdpTime = 0f;
         public const float BroadcastUdpCooldown = 1f;
+        private float requestTime = 0f;
+        private const float RequestCooldown = BroadcastUdpCooldown;
         private UdpClient udpClient;
         private System.Threading.Thread udpReceiveThread;
-        private IPAddress myIPAddress;
         private Information.Applications myApplication = Information.Applications.ApplicationError;
         private Role myRole = Role.RoleError;
         private bool isJoinButtonWillBeCreatedSoon = false;
         private bool isInviteButtonWillBeCreatedSoon = false;
 
-        private string receivedIp = string.Empty;
         private Information.Applications receivedApplication = Information.Applications.ApplicationError;
         private string receivedInvitationNickname = string.Empty;
+        private string acceptedClientId = string.Empty;
         private Information.Applications receivedInvitationApplication = Information.Applications.ApplicationError;
 
         private int receivedPosX = 0;
@@ -186,7 +188,8 @@ namespace LTTDIT.Net
             }
             else if (app == Information.Applications.TicTacToe)
             {
-                SetAct(testt3);
+                requestInfo = SendRequestTicTacToeInfo;
+                SetAct(SendRequestInfoAuto);
             }
         }
 
@@ -247,18 +250,39 @@ namespace LTTDIT.Net
             }
             else if (myApplication == Information.Applications.TicTacToe)
             {
-                SetAct(testt3);
+                requestInfo = SendRequestTicTacToeInfo;
+                SetAct(SendRequestInfoAuto);
             }
         }
 
         private void SendRequestTicTacToeInfo()
         {
-            Information.TransceiverData[] requestData = new Information.TransceiverData[2]
+            Information.TransceiverData[] requestData = new Information.TransceiverData[]
             {
+                Information.TransceiverData.OtherNickname,
                 Information.TransceiverData.TicTacToeBoardSize,
                 Information.TransceiverData.TicTacToeWinSize,
             };
             SendTcpMessageAsClient(Information.SetRequestCommand(requestData));
+        }
+
+        private void SendRequestOtherNicknameAsHost()
+        {
+            Information.TransceiverData[] requestData = new Information.TransceiverData[]
+            {
+                Information.TransceiverData.OtherNickname,
+            };
+            SendUniastTcpMessage(Information.SetRequestCommand(requestData), acceptedClientId);
+        }
+
+        private void DoSomethingWhenAcceptClient(string clientId)
+        {
+            acceptedClientId = clientId;
+            if (IsHost() && (myApplication == Information.Applications.TicTacToe))
+            {
+                requestInfo = SendRequestOtherNicknameAsHost;
+                SetAct(SendRequestInfoAuto);
+            }
         }
 
         public void RefuseInvitation()
@@ -290,18 +314,21 @@ namespace LTTDIT.Net
             sendMessageAsManually = SendMessageAsHostManually;
         }
 
-        public void TicTacToeSelected(int boardSize, int winSize)
+        public void TicTacToeSelected(int boardSize, int winSize, TicTacToe.TicTacToeSettings.TicTacToeEnemies enemy)
         {
-            myRole = Role.Host;
             myApplication = Information.Applications.TicTacToe;
-            maxClientsNumber = 1;
             AddOrUpdateData(new Information.Data(Information.TransceiverData.TicTacToeBoardSize, boardSize));
             AddOrUpdateData(new Information.Data(Information.TransceiverData.TicTacToeWinSize, winSize));
-            GetMyIp();
-            LoadTicTacToeScene();
-            messageToUdpBroadcast = GetCreatedRoomInformation;
-            StartUdpProcess();
-            StartTcpHostProcess();
+            if (enemy.Equals(TicTacToe.TicTacToeSettings.TicTacToeEnemies.LocalNetwork))
+            {
+                myRole = Role.Host;
+                maxClientsNumber = 1;
+                GetMyIp();
+                LoadTicTacToeScene();
+                messageToUdpBroadcast = GetCreatedRoomInformation;
+                StartUdpProcess();
+                StartTcpHostProcess();
+            }
         }
 
         private void ChangeScene(int sceneId)
@@ -409,6 +436,7 @@ namespace LTTDIT.Net
 
         private void SendUniastTcpMessage(string message, string id)
         {
+            availableTime = 0f;
             ClientObject clientObj = null;
             try
             {
@@ -443,7 +471,6 @@ namespace LTTDIT.Net
                     if (clientObjects[i].HasData())
                     {
                         string message = clientObjects[i].GetMessage();
-                        if (Information.IsAvailableCommand(message)) return;
                         ProcessTcpCommand(message, clientObjects[i].UID);
                     }
                 }
@@ -467,6 +494,7 @@ namespace LTTDIT.Net
                     string helloMessage = string.Format("\"{0}\" joined!", clientObjectl.userName);
                     ShowInfo(helloMessage);
                     SendBroadcastTcpMessage(helloMessage, clientObjectl.UID);
+                    DoSomethingWhenAcceptClient(clientObjectl.UID);
                     if (ShouldTheRoomBeClosed()) CloseRoomByHost();
                 }
             }
@@ -515,6 +543,7 @@ namespace LTTDIT.Net
         private void DisconnectTcpHost()
         {
             StopAvailableCheck();
+            RemAct(SendRequestInfoAuto);
             RemAct(ListenTcpAuto);
             RemAct(BroadcastTcpResendAuto);
             createChatMessage = null;
@@ -595,7 +624,7 @@ namespace LTTDIT.Net
                     }
                     while (networkStream.DataAvailable);
                     string message = builder.ToString();
-                    if (!Information.IsAvailableCommand(message)) ProcessTcpCommand(message);
+                    ProcessTcpCommand(message);
                 }
             }
             catch (Exception ex)
@@ -649,6 +678,7 @@ namespace LTTDIT.Net
         private void DisconnectTcpClient()
         {
             StopAvailableCheck();
+            RemAct(SendRequestInfoAuto);
             RemAct(ReceiveTcpMessageAuto);
             createChatMessage = null;
             sendMessageAsManually = null;
@@ -670,24 +700,8 @@ namespace LTTDIT.Net
             List<string> divided = Information.GetDividedCommands(data);
             foreach (string dividedCommand in divided)
             {
-                if (Information.IsNickname(dividedCommand))
-                {
-                    AddOrUpdateData(new Information.Data(Information.TransceiverData.OtherNickname, Information.GetNickname(dividedCommand)));
-                    if (myApplication == Information.Applications.TicTacToe)
-                    {
-                        showSecondPlayerNicknameAndSetTurn?.Invoke((string)GetDataByTransceiverData(Information.TransceiverData.OtherNickname));
-                        showSecondPlayerNicknameAndSetTurn = null;
-                    }
-                    else if (myApplication == Information.Applications.Chat)
-                    {
-                        SendBroadcastTcpMessage(dividedCommand, Uid);
-                    }
-                }
-                else if (Information.IsApplication(dividedCommand))
-                {
-                    receivedApplication = Information.GetApplication(dividedCommand);
-                }
-                else if (Information.IsData(dividedCommand))
+                ShowInfo(dividedCommand + " - command");
+                if (Information.IsData(dividedCommand))
                 {
                     Information.TransceiverData receivedTypeOfData = Information.GetTypeOfData(dividedCommand);
                     if (receivedTypeOfData == Information.TransceiverData.TicTacToePosX)
@@ -711,13 +725,34 @@ namespace LTTDIT.Net
                     else if (receivedTypeOfData == Information.TransceiverData.TicTacToeBoardSize)
                     {
                         AddOrUpdateData(new Information.Data(receivedTypeOfData, int.Parse(Information.GetData(dividedCommand, receivedTypeOfData))));
-                        ShowInfo(dividedCommand);
                     }
                     else if (receivedTypeOfData == Information.TransceiverData.TicTacToeWinSize)
                     {
                         AddOrUpdateData(new Information.Data(receivedTypeOfData, int.Parse(Information.GetData(dividedCommand, receivedTypeOfData))));
-                        ShowInfo(dividedCommand);
-                        testt();
+                        AllRequestTicTacToeDataReceived();
+                    }
+                    else if (receivedTypeOfData == Information.TransceiverData.OtherNickname)
+                    {
+                        AddOrUpdateData(new Information.Data(receivedTypeOfData, Information.GetData(dividedCommand, receivedTypeOfData)));
+                        if (IsHost() && (myApplication == Information.Applications.TicTacToe))
+                        {
+                            showSecondPlayerNicknameAndSetTurn?.Invoke((string)GetDataByTransceiverData(receivedTypeOfData));
+                            showSecondPlayerNicknameAndSetTurn = null;
+                            RequestAsHostOtherNicknameReceived();
+                        }
+                    }
+                    else if (receivedTypeOfData == Information.TransceiverData.MyNickname)
+                    {
+                        AddOrUpdateData(new Information.Data(Information.TransceiverData.OtherNickname,
+                            Information.GetData(dividedCommand, receivedTypeOfData)));
+                        if (myApplication == Information.Applications.Chat)
+                        {
+                            SendBroadcastTcpMessage(dividedCommand, Uid);
+                        }
+                    }
+                    else if (receivedTypeOfData == Information.TransceiverData.OtherApplication)
+                    {
+                        receivedApplication = Information.GetApplicationByString(Information.GetData(dividedCommand, receivedTypeOfData));
                     }
                 }
                 else if (Information.IsInvitationAcceptedCommand(dividedCommand))
@@ -753,33 +788,36 @@ namespace LTTDIT.Net
                     {
                         if (myRole == Role.Host)
                         {
-                            SendUniastTcpMessage(Information.SetDataCommand(transceiverData,
-                                (string)GetDataByTransceiverData(transceiverData)), Uid);
+                            SendUniastTcpMessage(Information.SetDataCommand(transceiverData, GetNickname()), Uid);
                         }
                         else if (myRole == Role.Client)
                         {
-                            SendTcpMessageAsClient(Information.SetDataCommand(transceiverData,
-                                (string)GetDataByTransceiverData(transceiverData)));
+                            SendTcpMessageAsClient(Information.SetDataCommand(transceiverData, GetNickname()));
                         }
                     }
                 }
             }
         }
 
-        private void testt3()
+        private void SendRequestInfoAuto()
         {
-            broadcastUdpTime += Time.deltaTime;
-            if (broadcastUdpTime >= 1f)
+            requestTime += Time.deltaTime;
+            if (requestTime >= RequestCooldown)
             {
-                broadcastUdpTime = 0f;
-                SendRequestTicTacToeInfo();
+                requestTime = 0f;
+                requestInfo?.Invoke();
             }
         }
 
-        private void testt()
+        private void AllRequestTicTacToeDataReceived()
         {
-            RemAct(testt3);
+            RemAct(SendRequestInfoAuto);
             LoadTicTacToeScene();
+        }
+
+        private void RequestAsHostOtherNicknameReceived()
+        {
+            RemAct(SendRequestInfoAuto);
         }
 
         private void OtherPlayerAcceptInvitation(string other_nickname)
@@ -846,7 +884,7 @@ namespace LTTDIT.Net
         public void SendHiMessageChatHost()
         {
             ShowInfo("Room created, waiting for connections...");
-            ShowInfo("Ip: " + myIPAddress.ToString() + ",   Nickname: " + GetNickname());
+            ShowInfo("Ip: " + (string)GetDataByTransceiverData(Information.TransceiverData.MyIpAddress) + ",   Nickname: " + GetNickname());
             try
             {
                 test1();
@@ -868,11 +906,6 @@ namespace LTTDIT.Net
         public void SendHiMessageChatClient()
         {
             ShowInfo("Welcome, " + GetNickname());
-        }
-
-        public void SendFirstMessageAsClientTicTacToe()
-        {
-            SendTcpMessageAsClient(Information.SetNicknameCommand(GetNickname()));
         }
 
         public void Exitt()
@@ -907,7 +940,7 @@ namespace LTTDIT.Net
             {
                 if (iPAddress.AddressFamily.Equals(AddressFamily.InterNetwork))
                 {
-                    myIPAddress = iPAddress;
+                    AddOrUpdateData(new Information.Data(Information.TransceiverData.MyIpAddress, iPAddress.ToString()));
                 }
             }
         }
@@ -943,7 +976,7 @@ namespace LTTDIT.Net
 
         private bool IsIHostByIp()
         {
-            return myIPAddress.ToString().EndsWith(".1");
+            return ((string)GetDataByTransceiverData(Information.TransceiverData.MyIpAddress)).EndsWith(".1");
         }
 
         private void StopUdpProcess()
@@ -975,18 +1008,32 @@ namespace LTTDIT.Net
                     {
                         byte[] data = udpClient.Receive(ref udpEndPointClient);
                         string message = GetStringFromByteArray(data);
-                        if (message == messageToUdpBroadcast.Invoke()) continue;
+                        if  (message == messageToUdpBroadcast.Invoke()) continue;
                         List<string> divided = Information.GetDividedCommands(message);
                         foreach (string command in divided)
                         {
-                            if (Information.IsIpAddress(command)) receivedIp = Information.GetIpAddress(command);
-                            else if (Information.IsNickname(command))
+                            if (Information.IsData(command))
                             {
-                                AddOrUpdateData(new Information.Data(Information.TransceiverData.OtherNickname, Information.GetNickname(command)));
+                                Information.TransceiverData receivedTypeOfData = Information.GetTypeOfData(command);
+                                if (receivedTypeOfData == Information.TransceiverData.MyNickname)
+                                {
+                                    AddOrUpdateData(new Information.Data(Information.TransceiverData.OtherNickname,
+                                        Information.GetData(command, receivedTypeOfData)));
+                                }
+                                else if (receivedTypeOfData == Information.TransceiverData.OtherIpAddress)
+                                {
+                                    AddOrUpdateData(new Information.Data(receivedTypeOfData, Information.GetData(command, receivedTypeOfData)));
+                                }
+                                else if (receivedTypeOfData == Information.TransceiverData.OtherApplication)
+                                {
+                                    receivedApplication = Information.GetApplicationByString(Information.GetData(command, receivedTypeOfData));
+                                }
                             }
-                            else if (Information.IsApplication(command)) receivedApplication = Information.GetApplication(command);
                         }
-                        if ((receivedIp != string.Empty) && ((string)GetDataByTransceiverData(Information.TransceiverData.OtherNickname) != string.Empty))
+                        if (IsDatasContains(Information.TransceiverData.OtherIpAddress) &&
+                            IsDatasContains(Information.TransceiverData.OtherNickname) &&
+                            ((string)GetDataByTransceiverData(Information.TransceiverData.OtherIpAddress) != string.Empty) &&
+                            ((string)GetDataByTransceiverData(Information.TransceiverData.OtherNickname) != string.Empty))
                         {
                             if (receivedApplication != Information.Applications.ApplicationError)
                             {
@@ -1022,9 +1069,10 @@ namespace LTTDIT.Net
         private void CreateJoinButtonFromMainThread()
         {
             RemAct(CreateJoinButtonFromMainThread);
-            setCreatedButton?.Invoke(receivedIp, (string)GetDataByTransceiverData(Information.TransceiverData.OtherNickname),
+            setCreatedButton?.Invoke((string)GetDataByTransceiverData(Information.TransceiverData.OtherIpAddress),
+                (string)GetDataByTransceiverData(Information.TransceiverData.OtherNickname),
                 receivedApplication, JoinButtonPressed);
-            receivedIp = string.Empty;
+            AddOrUpdateData(new Information.Data(Information.TransceiverData.OtherIpAddress, string.Empty));
             AddOrUpdateData(new Information.Data(Information.TransceiverData.OtherNickname, string.Empty));
             receivedApplication = Information.Applications.ApplicationError;
             isJoinButtonWillBeCreatedSoon = false;
@@ -1033,9 +1081,10 @@ namespace LTTDIT.Net
         private void CreateInviteButtonFromMainThread()
         {
             RemAct(CreateInviteButtonFromMainThread);
-            setCreatedButton?.Invoke(receivedIp, (string)GetDataByTransceiverData(Information.TransceiverData.OtherNickname),
+            setCreatedButton?.Invoke((string)GetDataByTransceiverData(Information.TransceiverData.OtherIpAddress),
+                (string)GetDataByTransceiverData(Information.TransceiverData.OtherNickname),
                 myApplication, InviteButtonPressed);
-            receivedIp = string.Empty;
+            AddOrUpdateData(new Information.Data(Information.TransceiverData.OtherIpAddress, string.Empty));
             AddOrUpdateData(new Information.Data(Information.TransceiverData.OtherNickname, string.Empty));
             receivedApplication = Information.Applications.ApplicationError;
             isInviteButtonWillBeCreatedSoon = false;
@@ -1093,12 +1142,12 @@ namespace LTTDIT.Net
 
         private string GetCreatedRoomInformation()
         {
-            return Information.SetJoinCommand(myIPAddress.ToString(), myApplication, GetNickname());
+            return Information.SetJoinCommand((string)GetDataByTransceiverData(Information.TransceiverData.MyIpAddress), myApplication, GetNickname());
         }
 
         private string GetInvitationInformation()
         {
-            return Information.SetInviteMeCommand(myIPAddress.ToString(), GetNickname());
+            return Information.SetInviteMeCommand((string)GetDataByTransceiverData(Information.TransceiverData.MyIpAddress), GetNickname());
         }
 
         private void SendMessageAsHostManually()
@@ -1125,13 +1174,11 @@ namespace LTTDIT.Net
         public void SendXODataAsHost(string data)
         {
             SendBroadcastTcpMessage(data, string.Empty);
-            ShowInfo(data);
         }
 
         public void SendXODataAsClient(string data)
         {
             SendTcpMessageAsClient(data);
-            ShowInfo(data);
         }
 
         private static byte[] GetByteArrayFromString(string infoToEncode)
